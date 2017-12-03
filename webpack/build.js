@@ -1,35 +1,47 @@
+/* global env:true, rm:true, mkdir:true, cp:true */
+
 // https://github.com/shelljs/shelljs
 require('shelljs/global');
-env.NODE_ENV = 'production';
 
-var path = require('path');
-var config = require('./config');
-var ora = require('ora');
-var webpack = require('webpack');
-var webpackConfig = require('./webpack.prod.conf');
+const path = require('path');
+const config = require('./config');
+const ora = require('ora');
+const webpack = require('webpack');
+const webpackConfig = require('./webpack.prod.conf');
 
-console.log(
-  '  Tip:\n' +
-  '  Built files are meant to be served over an HTTP server.\n' +
-  '  Opening index.html over file:// won\'t work.\n'
-);
+module.exports = function webpackProductionBuild (callback) {
+  env.NODE_ENV = 'production';
 
-var spinner = ora('building for production...');
-spinner.start();
+  console.log( // eslint-disable-line no-console
+    '  Tip:\n' +
+    '  Built files are meant to be served over an HTTP server.\n' +
+    '  Opening index.html over file:// won\'t work.\n'
+  );
 
-var assetsPath = path.join(config.build.assetsRoot, config.build.assetsSubDirectory);
-rm('-rf', assetsPath);
-mkdir('-p', assetsPath);
-cp('-R', config.build.staticAssetsDirectory, assetsPath);
+  const spinner = ora('building for production...');
+  spinner.start();
 
-webpack(webpackConfig, function (err, stats) {
-  spinner.stop();
-  if (err) throw err;
-  process.stdout.write(stats.toString({
-    colors: true,
-    modules: false,
-    children: false,
-    chunks: false,
-    chunkModules: false,
-  }) + '\n');
-});
+  const assetsPath = path.join(config.build.assetsRoot, config.build.assetsSubDirectory);
+  rm('-rf', assetsPath);
+  mkdir('-p', assetsPath);
+  cp('-R', config.build.staticAssetsDirectory, assetsPath);
+
+  webpack(webpackConfig, (err, stats) => {
+    spinner.stop();
+
+    const output = `${stats.toString({
+      colors: true,
+      modules: false,
+      children: false,
+      chunks: false,
+      chunkModules: false,
+    })}\n`;
+
+    if (callback) {
+      return err ? callback(err) : callback(null, output);
+    } else {
+      if (err) throw err;
+      process.stdout.write(output);
+    }
+  });
+};

@@ -21,18 +21,154 @@ import csvStringify from '../../libs/csvStringify';
 let api = {};
 
 /**
+ * @apiDefine ChallengeLeader Challenge Leader
+ * The leader of the challenge can use this route.
+ */
+
+/**
  * @apiDefine ChallengeNotFound
  * @apiError (404) {NotFound} ChallengeNotFound The specified challenge could not be found.
  */
 
 /**
+ * @apiDefine SuccessfulChallengeRequest
+ * @apiSuccess {UUID} challenge.group._id The group id.
+ * @apiSuccess {String} challenge.group.type Group type: `guild` or `party`.
+ * @apiSuccess {String} challenge.group.privacy Group privacy: `public` or `private`.
+ * @apiSuccess {String} challenge.name Full name of challenge.
+ * @apiSuccess {String} challenge.shortName A shortened name for the challenge, to be used as a tag.
+ * @apiSuccess {Object} challenge.leader User details of challenge leader.
+ * @apiSuccess {UUID} challenge.leader._id User id of challenge leader.
+ * @apiSuccess {Object} challenge.leader.profile Profile information of leader.
+ * @apiSuccess {Object} challenge.leader.profile.name Display Name of leader.
+ * @apiSuccess {String} challenge.updatedAt Timestamp of last update.
+ * @apiSuccess {String} challenge.createdAt Timestamp of challenge creation.
+ * @apiSuccess {UUID} challenge.id Id number of newly created challenge.
+ * @apiSuccess {UUID} challenge._id Same as `challenge.id`.
+ * @apiSuccess {String} challenge.prize Number of gems offered as prize to winner (can be 0).
+ * @apiSuccess {String} challenge.memberCount Number users participating in challenge.
+ * @apiSuccess {Object} challenge.tasksOrder Object containing IDs of the challenge's tasks and rewards in their preferred sort order.
+ * @apiSuccess {Array} challenge.tasksOrder.rewards Array of `reward` task IDs.
+ * @apiSuccess {Array} challenge.tasksOrder.todos Array of `todo` task IDs.
+ * @apiSuccess {Array} challenge.tasksOrder.dailys Array of `daily` task IDs.
+ * @apiSuccess {Array} challenge.tasksOrder.habits Array of `habit` task IDs.
+ * @apiSuccess {Boolean} challenge.official Boolean indicating if this is an official Habitica challenge.
+ *
+ */
+
+/**
+ * @apiDefine ChallengeSuccessExample
+ * @apiSuccessExample {json} Sucessfull response with single challenge
+ {
+   "data": {
+     "group": {
+      "_id": "group-id-associated-with-challenge",
+      "name": "MyGroup",
+      "type": "guild",
+      "privacy": "public"
+     },
+     "name": "Long Detailed Name of Challenge",
+     "shortName": "my challenge",
+     "leader": {
+       "_id": "user-id-of-challenge-creator",
+       "profile": {
+         "name": "MyUserName"
+       }
+     },
+     "updatedAt": "timestamp,
+     "createdAt": "timestamp",
+     "_id": "challenge-id",
+     "prize": 0,
+     "memberCount": 1,
+     "tasksOrder": {
+       "rewards": [
+         "uuid-of-challenge-reward"
+       ],
+       "todos": [
+         "uuid-of-challenge-todo"
+       ],
+       "dailys": [
+         "uuid-of-challenge-daily"
+       ],
+       "habits": [
+         "uuid-of-challenge-habit"
+       ]
+     },
+     "official": false,
+     "id": "challenge-id"
+   }
+ }
+*/
+
+/**
+ * @apiDefine ChallengeArrayExample
+ * @apiSuccessExample {json} Sucessful response with array of challenges
+ {
+   "data": [{
+     "group": {
+       "_id": "group-id-associated-with-challenge",
+       "name": "MyGroup",
+       "type": "guild",
+       "privacy": "public"
+     },
+     "name": "Long Detailed Name of Challenge",
+     "shortName": "my challenge",
+     "leader": {
+       "_id": "user-id-of-challenge-creator",
+       "profile": {
+         "name": "MyUserName"
+       }
+     },
+     "updatedAt": "timestamp,
+     "createdAt": "timestamp",
+     "_id": "challenge-id",
+     "prize": 0,
+     "memberCount": 1,
+     "tasksOrder": {
+       "rewards": [
+         "uuid-of-challenge-reward"
+       ],
+       "todos": [
+         "uuid-of-challenge-todo"
+       ],
+       "dailys": [
+         "uuid-of-challenge-daily"
+       ],
+       "habits": [
+         "uuid-of-challenge-habit"
+       ]
+     },
+     "official": false,
+     "id": "challenge-id"
+   }]
+ }
+*/
+
+/**
  * @api {post} /api/v3/challenges Create a new challenge
  * @apiName CreateChallenge
  * @apiGroup Challenge
+ * @apiDescription Creates a challenge. Cannot create associated tasks with this route. See <a href="#api-Task-CreateChallengeTasks">CreateChallengeTasks</a>.
  *
- * @apiSuccess {Object} data The newly created challenge
+ * @apiParam (Body) {Object} challenge An object representing the challenge to be created
+ * @apiParam (Body) {UUID} challenge.groupId The id of the group to which the challenge belongs
+ * @apiParam (Body) {String} challenge.name The full name of the challenge
+ * @apiParam (Body) {String} challenge.shortName A shortened name for the challenge, to be used as a tag
+ * @apiParam (Body) {String} [challenge.summary] A short summary advertising the main purpose of the challenge; maximum 250 characters; if not supplied, challenge.name will be used
+ * @apiParam (Body) {String} [challenge.description] A detailed description of the challenge
+ * @apiParam (Body) {Boolean} [official=false] Whether or not a challenge is an official Habitica challenge (requires admin)
+ * @apiParam (Body) {Number} [challenge.prize=0] Number of gems offered as a prize to challenge winner
+ *
+ * @apiSuccess (201) {Object} challenge The newly created challenge.
+ * @apiUse SuccessfulChallengeRequest
+ *
+ * @apiUse ChallengeSuccessExample
+ *
+ * @apiError (401) {NotAuthorized} CantAffordPrize User does not have enough gems to offer this prize.
+ * @apiError (400) {BadRequest} ChallengeValidationFailed Invalid or missing parameter in challenge body.
  *
  * @apiUse GroupNotFound
+ * @apiUse UserNotFound
  */
 api.createChallenge = {
   method: 'POST',
@@ -85,6 +221,9 @@ api.createChallenge = {
 
     group.challengeCount += 1;
 
+    if (!req.body.summary) {
+      req.body.summary = req.body.name;
+    }
     req.body.leader = user._id;
     req.body.official = user.contributor.admin && req.body.official ? true : false;
     let challenge = new Challenge(Challenge.sanitize(req.body));
@@ -92,6 +231,12 @@ api.createChallenge = {
     // First validate challenge so we don't save group if it's invalid (only runs sync validators)
     let challengeValidationErrors = challenge.validateSync();
     if (challengeValidationErrors) throw challengeValidationErrors;
+
+    // Add achievement if user's first challenge
+    if (!user.achievements.joinedChallenge) {
+      user.achievements.joinedChallenge = true;
+      user.addNotification('CHALLENGE_JOINED_ACHIEVEMENT');
+    }
 
     let results = await Bluebird.all([challenge.save({
       validateBeforeSave: false, // already validate
@@ -120,11 +265,15 @@ api.createChallenge = {
  * @api {post} /api/v3/challenges/:challengeId/join Join a challenge
  * @apiName JoinChallenge
  * @apiGroup Challenge
- * @apiParam {UUID} challengeId The challenge _id
+ * @apiParam (Path) {UUID} challengeId The challenge _id
  *
- * @apiSuccess {Object} data The challenge the user joined
+ * @apiSuccess {Object} challenge The challenge the user joined
+ * @apiUse SuccessfulChallengeRequest
  *
  * @apiUse ChallengeNotFound
+ * @apiUse UserNotFound
+ *
+ * @apiUse ChallengeSuccessExample
  */
 api.joinChallenge = {
   method: 'POST',
@@ -138,7 +287,7 @@ api.joinChallenge = {
     let validationErrors = req.validationErrors();
     if (validationErrors) throw validationErrors;
 
-    let challenge = await Challenge.findOne({ _id: req.params.challengeId });
+    let challenge = await Challenge.findOne({ _id: req.params.challengeId }).exec();
     if (!challenge) throw new NotFound(res.t('challengeNotFound'));
     if (challenge.isMember(user)) throw new NotAuthorized(res.t('userAlreadyInChallenge'));
 
@@ -146,6 +295,12 @@ api.joinChallenge = {
     if (!group || !challenge.hasAccess(user, group)) throw new NotFound(res.t('challengeNotFound'));
 
     challenge.memberCount += 1;
+
+    // Add achievement if user's first challenge
+    if (!user.achievements.joinedChallenge) {
+      user.achievements.joinedChallenge = true;
+      user.addNotification('CHALLENGE_JOINED_ACHIEVEMENT');
+    }
 
     // Add all challenge's tasks to user's tasks and save the challenge
     let results = await Bluebird.all([challenge.syncToUser(user), challenge.save()]);
@@ -168,11 +323,13 @@ api.joinChallenge = {
  * @api {post} /api/v3/challenges/:challengeId/leave Leave a challenge
  * @apiName LeaveChallenge
  * @apiGroup Challenge
- * @apiParam {UUID} challengeId The challenge _id
+ * @apiParam (Path) {UUID} challengeId The challenge _id
+ * @apiParam (Body) {String="remove-all","keep-all"} [keep="keep-all"] Whether or not to keep or remove the challenge's tasks
  *
  * @apiSuccess {Object} data An empty object
  *
  * @apiUse ChallengeNotFound
+ * @apiUse UserNotFound
  */
 api.leaveChallenge = {
   method: 'POST',
@@ -187,15 +344,10 @@ api.leaveChallenge = {
     let validationErrors = req.validationErrors();
     if (validationErrors) throw validationErrors;
 
-    let challenge = await Challenge.findOne({ _id: req.params.challengeId });
+    let challenge = await Challenge.findOne({ _id: req.params.challengeId }).exec();
     if (!challenge) throw new NotFound(res.t('challengeNotFound'));
 
-    let group = await Group.getGroup({user, groupId: challenge.group, fields: '_id type privacy'});
-    if (!group || !challenge.canView(user, group)) throw new NotFound(res.t('challengeNotFound'));
-
     if (!challenge.isMember(user)) throw new NotAuthorized(res.t('challengeMemberNotFound'));
-
-    challenge.memberCount -= 1;
 
     // Unlink challenge's tasks from user's tasks and save the challenge
     await Bluebird.all([challenge.unlinkTasks(user, keep), challenge.save()]);
@@ -204,11 +356,18 @@ api.leaveChallenge = {
 };
 
 /**
- * @api {get} /api/v3/challenges/user Get challenges for a user
+ * @api {get} /api/v3/challenges/user Get challenges for a user.
  * @apiName GetUserChallenges
  * @apiGroup Challenge
+ * @apiDescription Get challenges the user has access to. Includes public challenges, challenges belonging to the user's group, and challenges the user has already joined.
  *
- * @apiSuccess {Array} data An array of challenges sorted with official challenges first, followed by the challenges in order from newest to oldest
+ * @apiSuccess {Object[]} challenges An array of challenges sorted with official challenges first, followed by the challenges in order from newest to oldest
+ *
+ * @apiUse SuccessfulChallengeRequest
+ *
+ * @apiUse ChallengeArrayExample
+ *
+ * @apiUse UserNotFound
  */
 api.getUserChallenges = {
   method: 'GET',
@@ -216,13 +375,19 @@ api.getUserChallenges = {
   middlewares: [authWithHeaders()],
   async handler (req, res) {
     let user = res.locals.user;
+    let orOptions = [
+      {_id: {$in: user.challenges}}, // Challenges where the user is participating
+      {leader: user._id}, // Challenges where I'm the leader
+    ];
+
+    if (!req.query.member) {
+      orOptions.push({
+        group: {$in: user.getGroups()},
+      }); // Challenges in groups where I'm a member
+    }
 
     let challenges = await Challenge.find({
-      $or: [
-        {_id: {$in: user.challenges}}, // Challenges where the user is participating
-        {group: {$in: user.getGroups()}}, // Challenges in groups where I'm a member
-        {leader: user._id}, // Challenges where I'm the leader
-      ],
+      $or: orOptions,
     })
     .sort('-official -createdAt')
     // see below why we're not using populate
@@ -247,15 +412,18 @@ api.getUserChallenges = {
 };
 
 /**
- * @api {get} /api/v3/challenges/group/:groupId Get challenges for a group
+ * @api {get} /api/v3/challenges/groups/:groupId Get challenges for a group
  * @apiDescription Get challenges that the user is a member, public challenges and the ones from the user's groups.
  * @apiName GetGroupChallenges
  * @apiGroup Challenge
  *
- * @apiParam {UUID} groupId The group _id
+ * @apiParam (Path) {UUID} groupId The group _id
  *
  * @apiSuccess {Array} data An array of challenges sorted with official challenges first, followed by the challenges in order from newest to oldest
  *
+ * @apiUse SuccessfulChallengeRequest
+ * @apiUse ChallengeArrayExample
+ * @apiUse UserNotFound
  * @apiUse GroupNotFound
  */
 api.getGroupChallenges = {
@@ -271,6 +439,9 @@ api.getGroupChallenges = {
     let validationErrors = req.validationErrors();
     if (validationErrors) throw validationErrors;
 
+    if (groupId === 'party') groupId = user.party._id;
+    if (groupId === 'habitrpg') groupId = TAVERN_ID;
+
     let group = await Group.getGroup({user, groupId});
     if (!group) throw new NotFound(res.t('groupNotFound'));
 
@@ -282,9 +453,13 @@ api.getGroupChallenges = {
     let resChals = challenges.map(challenge => challenge.toJSON());
     // Instead of populate we make a find call manually because of https://github.com/Automattic/mongoose/issues/3833
     await Bluebird.all(resChals.map((chal, index) => {
-      return User.findById(chal.leader).select(nameFields).exec().then(populatedLeader => {
-        resChals[index].leader = populatedLeader ? populatedLeader.toJSON({minimize: true}) : null;
-      });
+      return User
+        .findById(chal.leader)
+        .select(nameFields)
+        .exec()
+        .then(populatedLeader => {
+          resChals[index].leader = populatedLeader ? populatedLeader.toJSON({minimize: true}) : null;
+        });
     }));
 
     res.respond(200, resChals);
@@ -296,9 +471,11 @@ api.getGroupChallenges = {
  * @apiName GetChallenge
  * @apiGroup Challenge
  *
- * @apiParam {UUID} challengeId The challenge _id
+ * @apiParam (Path) {UUID} challengeId The challenge _id
  *
  * @apiSuccess {Object} data The challenge object
+ * @apiUse SuccessfulChallengeRequest
+*  @apiUse ChallengeSuccessExample
  *
  * @apiUse ChallengeNotFound
  */
@@ -315,10 +492,10 @@ api.getChallenge = {
     let user = res.locals.user;
     let challengeId = req.params.challengeId;
 
-    let challenge = await Challenge.findById(challengeId)
-      // Don't populate the group as we'll fetch it manually later
-      // .populate('leader', nameFields)
-      .exec();
+    // Don't populate the group as we'll fetch it manually later
+    // .populate('leader', nameFields)
+    let challenge = await Challenge.findById(challengeId).exec();
+
     if (!challenge) throw new NotFound(res.t('challengeNotFound'));
 
     // Fetching basic group data
@@ -340,7 +517,7 @@ api.getChallenge = {
  * @apiName ExportChallengeCsv
  * @apiGroup Challenge
  *
- * @apiParam {UUID} challengeId The challenge _id
+ * @apiParam (Path) {UUID} challengeId The challenge _id
  *
  * @apiSuccess {String} challenge A csv file
  *
@@ -374,8 +551,12 @@ api.exportChallengeCsv = {
         .lean() // so we don't involve mongoose
         .exec(),
 
-      Tasks.Task.find({'challenge.id': challengeId, userId: {$exists: true}})
-        .sort({userId: 1, text: 1}).select('userId type text value notes').lean().exec(),
+      Tasks.Task.find({
+        'challenge.id': challengeId,
+        userId: {$exists: true},
+      }).sort({userId: 1, text: 1})
+        .select('userId type text value notes')
+        .lean().exec(),
     ]);
 
     let resArray = members.map(member => [member._id, member.profile.name]);
@@ -410,15 +591,26 @@ api.exportChallengeCsv = {
 };
 
 /**
- * @api {put} /api/v3/challenges/:challengeId Update a challenge
+ * @api {put} /api/v3/challenges/:challengeId Update the name, description, or leader of a challenge.
+ *
  * @apiName UpdateChallenge
  * @apiGroup Challenge
  *
- * @apiParam {UUID} challengeId The challenge _id
+ * @apiParam (Path) {UUID} challengeId The challenge _id
+ * @apiParam (Body) {String} [challenge.name] The new full name of the challenge.
+ * @apiParam (Body) {String} [challenge.summary] The new challenge summary.
+ * @apiParam (Body) {String} [challenge.description] The new challenge description.
+ * @apiParam (Body) {String} [challenge.leader] The UUID of the new challenge leader.
  *
  * @apiSuccess {Object} data The updated challenge
+ * @apiPermission ChallengeLeader
+ *
+ * @apiUse ChallengeSuccessExample
  *
  * @apiUse ChallengeNotFound
+ *
+ * @apiError (401) {NotAuthorized} MustBeChallengeLeader Only challenge leader
+ * can update the challenge.
  */
 api.updateChallenge = {
   method: 'PUT',
@@ -461,7 +653,7 @@ api.updateChallenge = {
  * @apiName DeleteChallenge
  * @apiGroup Challenge
  *
- * @apiParam {UUID} challengeId The _id for the challenge to delete
+ * @apiParam (Path) {UUID} challengeId The _id for the challenge to delete
  *
  * @apiSuccess {Object} data An empty object
  *
@@ -494,8 +686,8 @@ api.deleteChallenge = {
  * @apiName SelectChallengeWinner
  * @apiGroup Challenge
  *
- * @apiParam {UUID} challengeId The _id for the challenge to close with a winner
- * @apiParam {UUID} winnerId The _id of the winning user
+ * @apiParam (Path) {UUID} challengeId The _id for the challenge to close with a winner
+ * @apiParam (Path) {UUID} winnerId The _id of the winning user
  *
  * @apiSuccess {Object} data An empty object
  *

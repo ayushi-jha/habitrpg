@@ -1,76 +1,143 @@
-import Vue from 'vue';
-import state from './state';
-import * as actions from './actions';
-import * as getters from './getters';
+import Store from 'client/libs/store';
+import deepFreeze from 'client/libs/deepFreeze';
+import content from 'common/script/content/index';
+import * as commonConstants from 'common/script/constants';
+import { DAY_MAPPING } from 'common/script/cron';
+import { asyncResourceFactory } from 'client/libs/asyncResource';
+import axios from 'axios';
+import moment from 'moment';
 
-// Central application store for Habitica
-// Heavily inspired to Vuex (https://github.com/vuejs/vuex) with a very
-// similar internal implementation (thanks!), main difference is the absence of mutations.
+import actions from './actions';
+import getters from './getters';
 
-// Create a Vue instance (defined below) detatched from any DOM element to handle app data
-let _vm;
+const IS_TEST = process.env.NODE_ENV === 'test'; // eslint-disable-line no-process-env
 
-// The actual store interface
-const store = {
-  // App wide computed properties, calculated as computed properties in the internal VM
-  getters: {},
-  // Return the store's state
-  get state () {
-    return _vm.$data.state;
-  },
-  // Actions should be called using store.dispatch(ACTION_NAME, ...ARGS)
-  // They get passed the store instance and any additional argument passed to dispatch()
-  dispatch (type, ...args) {
-    let action = actions[type];
+// Load user auth parameters and determine if it's logged in
+// before trying to load data
+let isUserLoggedIn = false;
+let browserTimezoneOffset = moment().zone(); // eg, 240 - this will be converted on server as -(offset/60)
+axios.defaults.headers.common['x-client'] = 'habitica-web';
 
-    if (!action) throw new Error(`Action "${type}" not found.`);
-    return action(store, ...args);
-  },
-  // Watch data on the store's state
-  // Internally it uses vm.$watch and accept the same argument except
-  // for the first one that must be a getter function to which the state is passed
-  // For documentation see https://vuejs.org/api/#vm-watch
-  watch (getter, cb, options) {
-    if (typeof getter !== 'function') {
-      throw new Error('The first argument of store.watch must be a function.');
-    }
+let AUTH_SETTINGS = localStorage.getItem('habit-mobile-settings');
 
-    return _vm.$watch(() => getter(state), cb, options);
-  },
-};
+if (AUTH_SETTINGS) {
+  AUTH_SETTINGS = JSON.parse(AUTH_SETTINGS);
 
-// Setup getters
-const _computed = {};
+  if (AUTH_SETTINGS.auth && AUTH_SETTINGS.auth.apiId && AUTH_SETTINGS.auth.apiToken) {
+    axios.defaults.headers.common['x-api-user'] = AUTH_SETTINGS.auth.apiId;
+    axios.defaults.headers.common['x-api-key'] = AUTH_SETTINGS.auth.apiToken;
 
-Object.keys(getters).forEach(key => {
-  let getter = getters[key];
+    axios.defaults.headers.common['x-user-timezoneOffset'] = browserTimezoneOffset;
 
-  // Each getter is compiled to a computed property on the internal VM
-  _computed[key] = () => getter(store);
+    isUserLoggedIn = true;
+  }
+}
 
-  Object.defineProperty(store.getters, key, {
-    get: () => _vm[key],
+const i18nData = window && window['habitica-i18n'];
+
+let availableLanguages = [];
+let selectedLanguage = {};
+
+if (i18nData) {
+  availableLanguages = i18nData.availableLanguages;
+  selectedLanguage = i18nData.language;
+}
+
+// Export a function that generates the store and not the store directly
+// so that we can regenerate it multiple times for testing, when not testing
+// always export the same route
+
+let existingStore;
+export default function () {
+  if (!IS_TEST && existingStore) return existingStore;
+
+  existingStore = new Store({
+    actions,
+    getters,
+    state: {
+      serverAppVersion: '',
+      title: 'Habitica',
+      isUserLoggedIn,
+      isUserLoaded: false, // Means the user and the user's tasks are ready
+      isAmazonReady: false, // Whether the Amazon Payments lib can be used
+      user: asyncResourceFactory(),
+      credentials: isUserLoggedIn ? {
+        API_ID: AUTH_SETTINGS.auth.apiId,
+        API_TOKEN: AUTH_SETTINGS.auth.apiToken,
+      } : {},
+      // store the timezone offset in case it's different than the one in
+      // user.preferences.timezoneOffset and change it after the user is synced
+      // in app.vue
+      browserTimezoneOffset,
+      tasks: asyncResourceFactory(), // user tasks
+      completedTodosStatus: 'NOT_LOADED',
+      party: {
+        quest: {},
+        members: asyncResourceFactory(),
+      },
+      shops: {
+        market: asyncResourceFactory(),
+        quests: asyncResourceFactory(),
+        seasonal: asyncResourceFactory(),
+        'time-travelers': asyncResourceFactory(),
+      },
+      myGuilds: [],
+      groupFormOptions: {
+        creatingParty: false,
+        groupId: '',
+      },
+      avatarEditorOptions: {
+        editingUser: false,
+        startingPage: '',
+        subPage: '',
+      },
+      flagChatOptions: {
+        message: {},
+        groupId: '',
+      },
+      challengeOptions: {
+        cloning: false,
+        tasksToClone: {},
+        workingChallenge: {},
+      },
+      editingGroup: {}, // @TODO move to local state
+      // content data, frozen to prevent Vue from modifying it since it's static and never changes
+      // @TODO apply freezing to the entire codebase (the server) and not only to the client side?
+      // NOTE this takes about 10-15ms on a fast computer
+      content: deepFreeze(content),
+      constants: deepFreeze({...commonConstants, DAY_MAPPING}),
+      i18n: deepFreeze({
+        availableLanguages,
+        selectedLanguage,
+      }),
+      hideHeader: false,
+      memberModalOptions: {
+        viewingMembers: [],
+        groupId: '',
+        challengeId: '',
+        group: {},
+      },
+      openedItemRows: [],
+      spellOptions: {
+        castingSpell: false,
+        spellDrawOpen: true,
+      },
+      profileOptions: {
+        startingPage: '',
+      },
+      gemModalOptions: {
+        startingPage: '',
+      },
+      profileUser: {},
+      upgradingGroup: {},
+      notificationStore: [],
+      modalStack: [],
+      equipmentDrawerOpen: true,
+      groupPlans: [],
+      groupNotifications: [],
+      isRunningYesterdailies: false,
+    },
   });
-});
 
-// Setup internal Vue instance to make state and getters reactive
-_vm = new Vue({
-  data: { state },
-  computed: _computed,
-});
-
-export default store;
-
-export {
-  mapState,
-  mapGetters,
-  mapActions,
-} from './helpers';
-
-// Inject the store into all components as this.$store
-Vue.mixin({
-  beforeCreate () {
-    this.$store = store;
-  },
-});
-
+  return existingStore;
+}

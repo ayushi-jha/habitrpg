@@ -10,16 +10,28 @@ module.exports = function releasePets (user, req = {}, analytics) {
   }
 
   user.balance -= 1;
-  user.items.currentPet = '';
+
+  let giveBeastMasterAchievement = true;
+
+  let petInfo = content.petInfo[user.items.currentPet];
+
+  if (petInfo && petInfo.type === 'drop') {
+    user.items.currentPet = '';
+  }
 
   for (let pet in content.pets) {
+    if (!user.items.pets[pet]) {
+      giveBeastMasterAchievement = false;
+    }
     user.items.pets[pet] = 0;
   }
 
-  if (!user.achievements.beastMasterCount) {
-    user.achievements.beastMasterCount = 0;
+  if (giveBeastMasterAchievement) {
+    if (!user.achievements.beastMasterCount) {
+      user.achievements.beastMasterCount = 0;
+    }
+    user.achievements.beastMasterCount++;
   }
-  user.achievements.beastMasterCount++;
 
   if (analytics) {
     analytics.track('release pets', {

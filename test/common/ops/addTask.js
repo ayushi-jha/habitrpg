@@ -33,6 +33,9 @@ describe('shared.ops.addTask', () => {
     expect(habit.down).to.equal(false);
     expect(habit.history).to.eql([]);
     expect(habit.checklist).to.not.exist;
+    expect(habit.frequency).to.equal('daily');
+    expect(habit.counterUp).to.equal(0);
+    expect(habit.counterDown).to.equal(0);
   });
 
   it('adds an habtit when type is invalid', () => {
@@ -122,14 +125,6 @@ describe('shared.ops.addTask', () => {
       user.preferences.newTaskEdit = false;
       expect(addTask(user)._editing).not.be.ok;
       expect(addTask(user)._edit).to.not.be.ok;
-    });
-
-    it('respects tagsCollapsed preference', () => {
-      user.preferences.tagsCollapsed = true;
-      expect(addTask(user)._tags).to.not.be.ok;
-
-      user.preferences.tagsCollapsed = false;
-      expect(addTask(user)._tags).to.be.ok;
     });
 
     it('respects advancedCollapsed preference', () => {

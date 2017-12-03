@@ -4,6 +4,9 @@ import {
   publicFields as memberFields,
   nameFields,
 } from '../../models/user';
+import {
+  KNOWN_INTERACTIONS,
+} from '../../models/user/methods';
 import { model as Group } from '../../models/group';
 import { model as Challenge } from '../../models/challenge';
 import {
@@ -17,6 +20,7 @@ import {
 } from '../../libs/email';
 import Bluebird from 'bluebird';
 import { sendNotification as sendPushNotification } from '../../libs/pushNotifications';
+import { achievements } from '../../../../website/common/';
 
 let api = {};
 
@@ -25,7 +29,7 @@ let api = {};
  * @apiName GetMember
  * @apiGroup Member
  *
- * @apiParam {UUID} memberId The member's id
+ * @apiParam (Path) {UUID} memberId The member's id
  *
  * @apiSuccess {Object} data The member object
  *
@@ -58,9 +62,118 @@ api.getMember = {
   },
 };
 
+/**
+ * @api {get} /api/v3/members/:memberId/achievements Get member achievements object
+ * @apiName GetMemberAchievements
+ * @apiGroup Member
+ * @apiDescription Get a list of achievements of the requested member, grouped by basic / seasonal / special.
+ *
+ * @apiParam (Path) {UUID} memberId The member's id
+ *
+ * @apiSuccess {Object} data The achievements object
+ *
+ * @apiSuccess {Object} data.basic The basic achievements object
+ * @apiSuccess {Object} data.seasonal The seasonal achievements object
+ * @apiSuccess {Object} data.special The special achievements object
+ *
+ * @apiSuccess {String} data.*.label The label for that category
+ * @apiSuccess {Object} data.*.achievements The achievements in that category
+ *
+ * @apiSuccess {String} data.*.achievements.title The localized title string
+ * @apiSuccess {String} data.*.achievements.text The localized description string
+ * @apiSuccess {Boolean} data.*.achievements.earned Whether the user has earned the achievement
+ * @apiSuccess {Number} data.*.achievements.index The unique index assigned to the achievement (only for sorting purposes)
+ * @apiSuccess {Anything} data.*.achievements.value The value related to the achievement (if applicable)
+ * @apiSuccess {Number} data.*.achievements.optionalCount The count related to the achievement (if applicable)
+ *
+ * @apiSuccessExample {json} Successful Response
+ * {
+ *   basic: {
+ *     label: "Basic",
+ *     achievements: {
+ *       streak: {
+ *         title: "0 Streak Achievements",
+ *         text: "Has performed 0 21-day streaks on Dailies",
+ *         icon: "achievement-thermometer",
+ *         earned: false,
+ *         value: 0,
+ *         index: 60,
+ *         optionalCount: 0
+ *       },
+ *       perfect: {
+ *         title: "5 Perfect Days",
+ *         text: "Completed all active Dailies on 5 days. With this achievement you get a +level/2 buff to all attributes for the next day. Levels greater than 100 don't have any additional effects on buffs.",
+ *         icon: "achievement-perfect",
+ *         earned: true,
+ *         value: 5,
+ *         index: 61,
+ *         optionalCount: 5
+ *       }
+ *     }
+ *   },
+ *   seasonal: {
+ *     label: "Seasonal",
+ *     achievements: {
+ *       habiticaDays: {
+ *         title: "Habitica Naming Day",
+ *         text: "Celebrated 0 Naming Days! Thanks for being a fantastic user.",
+ *         icon: "achievement-habiticaDay",
+ *         earned: false,
+ *         value: 0,
+ *         index: 72,
+ *         optionalCount: 0
+ *       }
+ *     }
+ *   },
+ *   special: {
+ *     label: "Special",
+ *     achievements: {
+ *       habitSurveys: {
+ *         title: "Helped Habitica Grow",
+ *         text: "Helped Habitica grow on 0 occasions, either by filling out a survey or helping with a major testing effort. Thank you!",
+ *         icon: "achievement-tree",
+ *         earned: false,
+ *         value: 0,
+ *         index: 88,
+ *         optionalCount: 0
+ *       }
+ *     }
+ *   }
+ * }
+ *
+ * @apiError (400) {BadRequest} MemberIdRequired The `id` param is required and must be a valid `UUID`
+ * @apiError (404) {NotFound} UserWithIdNotFound The `id` param did not belong to an existing member
+ */
+api.getMemberAchievements = {
+  method: 'GET',
+  url: '/members/:memberId/achievements',
+  middlewares: [],
+  async handler (req, res) {
+    req.checkParams('memberId', res.t('memberIdRequired')).notEmpty().isUUID();
+
+    let validationErrors = req.validationErrors();
+    if (validationErrors) throw validationErrors;
+
+    let memberId = req.params.memberId;
+
+    let member = await User
+      .findById(memberId)
+      .select(memberFields)
+      .exec();
+
+    if (!member) throw new NotFound(res.t('userWithIDNotFound', {userId: memberId}));
+
+    let achievsObject = achievements.getAchievementsForProfile(member, req.language);
+
+    res.respond(200, achievsObject);
+  },
+};
+
 // Return a request handler for getMembersForGroup / getInvitesForGroup / getMembersForChallenge
-// type is `invites` or `members`
+
+// @TODO: This violates the Liskov substitution principle. We should create factory functions. See Webhooks for a good example
 function _getMembersForItem (type) {
+  // check for allowed `type`
   if (['group-members', 'group-invites', 'challenge-members'].indexOf(type) === -1) {
     throw new Error('Type must be one of "group-members", "group-invites", "challenge-members"');
   }
@@ -108,9 +221,23 @@ function _getMembersForItem (type) {
 
     if (type === 'challenge-members') {
       query.challenges = challenge._id;
+
+      if (req.query.includeAllPublicFields === 'true') {
+        fields = memberFields;
+        addComputedStats = true;
+      }
+
+      if (req.query.search) {
+        query['profile.name'] = {$regex: req.query.search};
+      }
     } else if (type === 'group-members') {
       if (group.type === 'guild') {
         query.guilds = group._id;
+
+        if (req.query.includeAllPublicFields === 'true') {
+          fields = memberFields;
+          addComputedStats = true;
+        }
       } else {
         query['party._id'] = group._id; // group._id and not groupId because groupId could be === 'party'
 
@@ -122,8 +249,18 @@ function _getMembersForItem (type) {
     } else if (type === 'group-invites') {
       if (group.type === 'guild') { // eslint-disable-line no-lonely-if
         query['invitations.guilds.id'] = group._id;
+
+        if (req.query.includeAllPublicFields === 'true') {
+          fields = memberFields;
+          addComputedStats = true;
+        }
       } else {
         query['invitations.party.id'] = group._id; // group._id and not groupId because groupId could be === 'party'
+        // @TODO invitations are now stored like this: `'invitations.parties': []`  Probably need a database index for it.
+        if (req.query.includeAllPublicFields === 'true') {
+          fields = memberFields;
+          addComputedStats = true;
+        }
       }
     }
 
@@ -160,11 +297,11 @@ function _getMembersForItem (type) {
  * @apiName GetMembersForGroup
  * @apiGroup Member
  *
- * @apiParam {UUID} groupId The group id
- * @apiParam {UUID} lastId Query parameter to specify the last member returned in a previous request to this route and get the next batch of results
- * @apiParam {boolean} includeAllPublicFields Query parameter available only when fetching a party. If === `true` then all public fields for members will be returned (like when making a request for a single member)
+ * @apiParam (Path) {UUID} groupId The group id
+ * @apiParam (Query) {UUID} lastId Query parameter to specify the last member returned in a previous request to this route and get the next batch of results
+ * @apiParam (Query) {Boolean} includeAllPublicFields Query parameter available only when fetching a party. If === `true` then all public fields for members will be returned (like when making a request for a single member)
  *
- * @apiSuccess {array} data An array of members, sorted by _id
+ * @apiSuccess {Array} data An array of members, sorted by _id
  * @apiUse ChallengeNotFound
  * @apiUse GroupNotFound
  */
@@ -181,8 +318,8 @@ api.getMembersForGroup = {
  * @apiName GetInvitesForGroup
  * @apiGroup Member
  *
- * @apiParam {UUID} groupId The group id
- * @apiParam {UUID} lastId Query parameter to specify the last invite returned in a previous request to this route and get the next batch of results
+ * @apiParam (Path) {UUID} groupId The group id
+ * @apiParam (Query) {UUID} lastId Query parameter to specify the last invite returned in a previous request to this route and get the next batch of results
  *
  * @apiSuccess {array} data An array of invites, sorted by _id
  *
@@ -206,11 +343,11 @@ api.getInvitesForGroup = {
  * @apiName GetMembersForChallenge
  * @apiGroup Member
  *
- * @apiParam {UUID} challengeId The challenge id
- * @apiParam {UUID} lastId Query parameter to specify the last member returned in a previous request to this route and get the next batch of results
- * @apiParam {String} includeAllMembers BETA Query parameter - If 'true' all challenge members are returned
+ * @apiParam (Path) {UUID} challengeId The challenge id
+ * @apiParam (Query) {UUID} lastId Query parameter to specify the last member returned in a previous request to this route and get the next batch of results
+ * @apiParam (Query) {String} includeAllMembers BETA Query parameter - If 'true' all challenge members are returned
 
- * @apiSuccess {array} data An array of members, sorted by _id
+ * @apiSuccess {Array} data An array of members, sorted by _id
  *
  * @apiUse ChallengeNotFound
  * @apiUse GroupNotFound
@@ -227,8 +364,8 @@ api.getMembersForChallenge = {
  * @apiName GetChallengeMemberProgress
  * @apiGroup Member
  *
- * @apiParam {UUID} challengeId The challenge _id
- * @apiParam {UUID} member The member _id
+ * @apiParam (Path) {UUID} challengeId The challenge _id
+ * @apiParam (Path) {UUID} memberId The member _id
  *
  * @apiSuccess {Object} data Return an object with member _id, profile.name and a tasks object with the challenge tasks for the member
  *
@@ -278,12 +415,45 @@ api.getChallengeMemberProgress = {
 };
 
 /**
- * @api {posts} /api/v3/members/send-private-message Send a private message to a member
+ * @api {get} /api/v3/members/:toUserId/objections/:interaction Get any objections that would occur if the given interaction was attempted - BETA
+ * @apiVersion 3.0.0
+ * @apiName GetObjectionsToInteraction
+ * @apiGroup Member
+ *
+ * @apiParam (Path) {UUID} toUserId The user to interact with
+ * @apiParam (Path) {String="send-private-message","transfer-gems"} interaction Name of the interaction to query
+ *
+ * @apiSuccess {Array} data Return an array of objections, if the interaction would be blocked; otherwise an empty array
+ */
+api.getObjectionsToInteraction = {
+  method: 'GET',
+  url: '/members/:toUserId/objections/:interaction',
+  middlewares: [authWithHeaders()],
+  async handler (req, res) {
+    req.checkParams('toUserId', res.t('toUserIDRequired')).notEmpty().isUUID();
+    req.checkParams('interaction', res.t('interactionRequired')).notEmpty().isIn(KNOWN_INTERACTIONS);
+
+    let validationErrors = req.validationErrors();
+    if (validationErrors) throw validationErrors;
+
+    let sender = res.locals.user;
+    let receiver = await User.findById(req.params.toUserId).exec();
+    if (!receiver) throw new NotFound(res.t('userWithIDNotFound', {userId: req.params.toUserId}));
+
+    let interaction = req.params.interaction;
+    let response = sender.getObjectionsToInteraction(interaction, receiver);
+
+    res.respond(200, response.map(res.t));
+  },
+};
+
+/**
+ * @api {post} /api/v3/members/send-private-message Send a private message to a member
  * @apiName SendPrivateMessage
  * @apiGroup Member
  *
- * @apiParam {String} message Body parameter - The message
- * @apiParam {UUID} toUserId Body parameter - The user to contact
+ * @apiParam (Body) {String} message Body parameter - The message
+ * @apiParam (Body) {UUID} toUserId Body parameter - The user to contact
  *
  * @apiSuccess {Object} data An empty Object
  *
@@ -302,24 +472,17 @@ api.sendPrivateMessage = {
 
     let sender = res.locals.user;
     let message = req.body.message;
-
     let receiver = await User.findById(req.body.toUserId).exec();
     if (!receiver) throw new NotFound(res.t('userNotFound'));
 
-    let userBlockedSender = receiver.inbox.blocks.indexOf(sender._id) !== -1;
-    let userIsBlockBySender = sender.inbox.blocks.indexOf(receiver._id) !== -1;
-    let userOptedOutOfMessaging = receiver.inbox.optOut;
+    let objections = sender.getObjectionsToInteraction('send-private-message', receiver);
+    if (objections.length > 0) throw new NotAuthorized(res.t(objections[0]));
 
-    if (userBlockedSender || userIsBlockBySender || userOptedOutOfMessaging) {
-      throw new NotAuthorized(res.t('notAuthorizedToSendMessageToThisUser'));
-    }
-
-    await sender.sendMessage(receiver, message);
+    await sender.sendMessage(receiver, { receiverMsg: message });
 
     if (receiver.preferences.emailNotifications.newPM !== false) {
       sendTxnEmail(receiver, 'new-pm', [
         {name: 'SENDER', content: getUserInfo(sender, ['name']).name},
-        {name: 'PMS_INBOX_URL', content: '/#/options/groups/inbox'},
       ]);
     }
     if (receiver.preferences.pushNotifications.newPM !== false) {
@@ -340,13 +503,13 @@ api.sendPrivateMessage = {
 };
 
 /**
- * @api {posts} /api/v3/members/transfer-gems Send a gem gift to a member
+ * @api {post} /api/v3/members/transfer-gems Send a gem gift to a member
  * @apiName TransferGems
  * @apiGroup Member
  *
- * @apiParam {String} message Body parameter The message
- * @apiParam {UUID} toUserId Body parameter The toUser _id
- * @apiParam {Integer} gemAmount Body parameter The number of gems to send
+ * @apiParam (Body) {String} message The message
+ * @apiParam (Body) {UUID} toUserId The toUser _id
+ * @apiParam (Body) {Integer} gemAmount The number of gems to send
  *
  * @apiSuccess {Object} data An empty Object
  *
@@ -364,13 +527,11 @@ api.transferGems = {
     if (validationErrors) throw validationErrors;
 
     let sender = res.locals.user;
-
     let receiver = await User.findById(req.body.toUserId).exec();
     if (!receiver) throw new NotFound(res.t('userNotFound'));
 
-    if (receiver._id === sender._id) {
-      throw new NotAuthorized(res.t('cannotSendGemsToYourself'));
-    }
+    let objections = sender.getObjectionsToInteraction('transfer-gems', receiver);
+    if (objections.length > 0) throw new NotAuthorized(res.t(objections[0]));
 
     let gemAmount = req.body.gemAmount;
     let amount = gemAmount / 4;
@@ -384,18 +545,27 @@ api.transferGems = {
     let promises = [receiver.save(), sender.save()];
     await Bluebird.all(promises);
 
-    let message = res.t('privateMessageGiftIntro', {
-      receiverName: receiver.profile.name,
-      senderName: sender.profile.name,
+    // generate the message in both languages, so both users can understand it
+    let receiverLang = receiver.preferences.language;
+    let senderLang = sender.preferences.language;
+    let [receiverMsg, senderMsg] = [receiverLang, senderLang].map((lang) => {
+      let messageContent = res.t('privateMessageGiftGemsMessage', {
+        receiverName: receiver.profile.name,
+        senderName: sender.profile.name,
+        gemAmount,
+      }, lang);
+      messageContent = `\`${messageContent}\` `;
+
+      if (req.body.message) {
+        messageContent += req.body.message;
+      }
+      return messageContent;
     });
-    message += res.t('privateMessageGiftGemsMessage', {gemAmount});
-    message =  `\`${message}\` `;
 
-    if (req.body.message) {
-      message += req.body.message;
-    }
-
-    await sender.sendMessage(receiver, message);
+    await sender.sendMessage(receiver, {
+      senderMsg,
+      receiverMsg,
+    });
 
     let byUsername = getUserInfo(sender, ['name']).name;
 
@@ -408,8 +578,8 @@ api.transferGems = {
     if (receiver.preferences.pushNotifications.giftedGems !== false) {
       sendPushNotification(receiver,
         {
-          title: res.t('giftedGems'),
-          message: res.t('giftedGemsInfo', {amount: gemAmount, name: byUsername}),
+          title: res.t('giftedGems', receiverLang),
+          message: res.t('giftedGemsInfo', {amount: gemAmount, name: byUsername}, receiverLang),
           identifier: 'giftedGems',
           payload: {replyTo: sender._id},
         });

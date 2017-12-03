@@ -1,18 +1,23 @@
 import content from '../content/index';
 import i18n from '../i18n';
-import _ from 'lodash';
+import merge from 'lodash/merge';
+import reduce from 'lodash/reduce';
+import each from 'lodash/each';
 import {
   NotAuthorized,
 } from '../libs/errors';
 import randomVal from '../libs/randomVal';
 import predictableRandom from '../fns/predictableRandom';
 
+import { removePinnedGearByClass, addPinnedGearByClass, addPinnedGear } from './pinnedGearUtils';
+import getItemInfo from '../libs/getItemInfo';
+
 module.exports = function revive (user, req = {}, analytics) {
   if (user.stats.hp > 0) {
     throw new NotAuthorized(i18n.t('cannotRevive', req.language));
   }
 
-  _.merge(user.stats, {
+  merge(user.stats, {
     hp: 50,
     exp: 0,
     gp: 0,
@@ -22,7 +27,7 @@ module.exports = function revive (user, req = {}, analytics) {
     user.stats.lvl--;
   }
 
-  let lostStat = randomVal(_.reduce(['str', 'con', 'per', 'int'], function findRandomStat (m, k) {
+  let lostStat = randomVal(reduce(['str', 'con', 'per', 'int'], function findRandomStat (m, k) {
     if (user.stats[k]) {
       m[k] = k;
     }
@@ -47,7 +52,7 @@ module.exports = function revive (user, req = {}, analytics) {
   let losableItems = {};
   let userClass = user.stats.class;
 
-  _.each(gearOwned, function findLosableItems (value, key) {
+  each(gearOwned, function findLosableItems (value, key) {
     let itm;
     if (value) {
       itm = content.gear.flat[key];
@@ -79,7 +84,14 @@ module.exports = function revive (user, req = {}, analytics) {
   let item = content.gear.flat[lostItem];
 
   if (item) {
+    removePinnedGearByClass(user);
+
     user.items.gear.owned[lostItem] = false;
+
+    addPinnedGearByClass(user);
+
+    let itemInfo = getItemInfo(user, 'marketGear', item);
+    addPinnedGear(user, itemInfo.pinType, itemInfo.path);
 
     if (user.items.gear.equipped[item.type] === lostItem) {
       user.items.gear.equipped[item.type] =  `${item.type}_base_0`;

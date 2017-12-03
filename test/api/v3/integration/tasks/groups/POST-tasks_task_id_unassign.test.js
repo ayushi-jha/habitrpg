@@ -75,15 +75,6 @@ describe('POST /tasks/:taskId/unassign/:memberId', () => {
       });
   });
 
-  it('returns error when non leader tries to create a task', async () => {
-    await expect(member.post(`/tasks/${task._id}/unassign/${member._id}`))
-      .to.eventually.be.rejected.and.eql({
-        code: 401,
-        error: 'NotAuthorized',
-        message: t('onlyGroupLeaderCanEditTasks'),
-      });
-  });
-
   it('unassigns a user from a task', async () => {
     await user.post(`/tasks/${task._id}/unassign/${member._id}`);
 
@@ -113,5 +104,42 @@ describe('POST /tasks/:taskId/unassign/:memberId', () => {
 
     expect(groupTask[0].group.assignedUsers).to.contain(member2._id);
     expect(member2SyncedTask).to.exist;
+  });
+
+  it('allows a manager to unassign a user from a task', async () => {
+    await user.post(`/groups/${guild._id}/add-manager`, {
+      managerId: member2._id,
+    });
+
+    await member2.post(`/tasks/${task._id}/unassign/${member._id}`);
+
+    let groupTask = await member2.get(`/tasks/group/${guild._id}`);
+    let memberTasks = await member.get('/tasks/user');
+    let syncedTask = find(memberTasks, findAssignedTask);
+
+    expect(groupTask[0].group.assignedUsers).to.not.contain(member._id);
+    expect(syncedTask).to.not.exist;
+  });
+
+  it('allows a user to unassign themselves', async () => {
+    await member.post(`/tasks/${task._id}/unassign/${member._id}`);
+
+    let groupTask = await user.get(`/tasks/group/${guild._id}`);
+    let memberTasks = await member.get('/tasks/user');
+    let syncedTask = find(memberTasks, findAssignedTask);
+
+    expect(groupTask[0].group.assignedUsers).to.not.contain(member._id);
+    expect(syncedTask).to.not.exist;
+  });
+
+  // @TODO: Which do we want? The user to unassign themselves or not. This test was in
+  // here, but then we had a request to allow to unaissgn.
+  xit('returns error when non leader tries to unassign their a task', async () => {
+    await expect(member.post(`/tasks/${task._id}/unassign/${member._id}`))
+      .to.eventually.be.rejected.and.eql({
+        code: 401,
+        error: 'NotAuthorized',
+        message: t('onlyGroupLeaderCanEditTasks'),
+      });
   });
 });

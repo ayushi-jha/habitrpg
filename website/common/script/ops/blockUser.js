@@ -6,6 +6,7 @@ import {
 
 module.exports = function blockUser (user, req = {}) {
   if (!validator.isUUID(req.params.uuid)) throw new BadRequest(i18n.t('invalidUUID', req.language));
+  if (req.params.uuid === user._id) throw new BadRequest(i18n.t('blockYourself', req.language));
 
   let i = user.inbox.blocks.indexOf(req.params.uuid);
   if (i === -1) {
@@ -14,7 +15,7 @@ module.exports = function blockUser (user, req = {}) {
     user.inbox.blocks.splice(i, 1);
   }
 
-  user.markModified('inbox.blocks');
+  if (user.markModified) user.markModified('inbox.blocks');
   return [
     user.inbox.blocks,
   ];

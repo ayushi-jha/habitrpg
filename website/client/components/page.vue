@@ -1,13 +1,6 @@
 <template lang="pug">
-p {{ msg }}
+.row
+  .col
+    h1.page-header Page
+    p {{ $route.path }}
 </template>
-
-<script>
-export default {
-  data () {
-    return {
-      msg: 'You\'re on Another Page!',
-    };
-  },
-};
-</script>

@@ -19,6 +19,9 @@ describe('slack', () => {
           profile: {
             name: 'flagger',
           },
+          preferences: {
+            language: 'flagger-lang',
+          },
         },
         group: {
           id: 'group-id',
@@ -44,7 +47,7 @@ describe('slack', () => {
 
       expect(IncomingWebhook.prototype.send).to.be.calledOnce;
       expect(IncomingWebhook.prototype.send).to.be.calledWith({
-        text: 'flagger (flagger-id) flagged a message',
+        text: 'flagger (flagger-id) flagged a message (language: flagger-lang)',
         attachments: [{
           fallback: 'Flag Message',
           color: 'danger',
@@ -68,7 +71,7 @@ describe('slack', () => {
       expect(IncomingWebhook.prototype.send).to.be.calledWithMatch({
         attachments: [sandbox.match({
           title: 'Flag in Some group',
-          title_link: sandbox.match(/.*\/#\/options\/groups\/guilds\/group-id/),
+          title_link: sandbox.match(/.*\/groups\/guild\/group-id/),
         })],
       });
     });
@@ -83,7 +86,7 @@ describe('slack', () => {
       expect(IncomingWebhook.prototype.send).to.be.calledWithMatch({
         attachments: [sandbox.match({
           title: 'Flag in Tavern',
-          title_link: sandbox.match(/.*\/#\/options\/groups\/tavern/),
+          title_link: sandbox.match(/.*\/groups\/tavern/),
         })],
       });
     });

@@ -3,7 +3,9 @@ import revive from './revive';
 import reset from './reset';
 import reroll from './reroll';
 import rebirth from './rebirth';
-import allocateNow from './allocateNow';
+import allocate from './stats/allocate';
+import allocateBulk from './stats/allocateBulk';
+import allocateNow from './stats/allocateNow';
 import sortTask from './sortTask';
 import updateTask from './updateTask';
 import deleteTask from './deleteTask';
@@ -18,6 +20,7 @@ import blockUser from './blockUser';
 import feed from './feed';
 import buySpecialSpell from './buySpecialSpell';
 import purchase from './purchase';
+import purchaseWithSpell from './purchaseWithSpell';
 import releasePets from './releasePets';
 import releaseMounts from './releaseMounts';
 import releaseBoth from './releaseBoth';
@@ -34,11 +37,11 @@ import hatch from './hatch';
 import unlock from './unlock';
 import changeClass from './changeClass';
 import disableClasses from './disableClasses';
-import allocate from './allocate';
 import readCard from './readCard';
 import openMysteryItem from './openMysteryItem';
 import scoreTask from './scoreTask';
 import markPmsRead from './markPMSRead';
+import * as pinnedGearUtils from './pinnedGearUtils';
 
 module.exports = {
   sleep,
@@ -47,6 +50,7 @@ module.exports = {
   reroll,
   rebirth,
   allocateNow,
+  allocateBulk,
   sortTask,
   updateTask,
   deleteTask,
@@ -61,6 +65,7 @@ module.exports = {
   feed,
   buySpecialSpell,
   purchase,
+  purchaseWithSpell,
   releasePets,
   releaseMounts,
   releaseBoth,
@@ -82,4 +87,5 @@ module.exports = {
   openMysteryItem,
   scoreTask,
   markPmsRead,
+  pinnedGearUtils,
 };

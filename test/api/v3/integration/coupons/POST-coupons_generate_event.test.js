@@ -4,6 +4,7 @@ import {
   resetHabiticaDB,
 } from '../../../../helpers/api-v3-integration.helper';
 import couponCode from 'coupon-code';
+import apiMessages from '../../../../../website/server/libs/apiMessages';
 
 describe('POST /coupons/generate/:event', () => {
   let user;
@@ -25,15 +26,7 @@ describe('POST /coupons/generate/:event', () => {
     await expect(user.post('/coupons/generate/aaa')).to.eventually.be.rejected.and.eql({
       code: 401,
       error: 'NotAuthorized',
-      message: t('noSudoAccess'),
-    });
-  });
-
-  it('returns an error if event is missing', async () => {
-    await expect(user.post('/coupons/generate')).to.eventually.be.rejected.and.eql({
-      code: 404,
-      error: 'NotFound',
-      message: 'Not found.',
+      message: apiMessages('noSudoAccess'),
     });
   });
 

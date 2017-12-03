@@ -1,10 +1,10 @@
 # Reporting Bugs
 
-[Please see these instructions for reporting bugs](https://github.com/HabitRPG/habitrpg/issues/2760)
+[Please see these instructions for reporting bugs](https://github.com/HabitRPG/habitica/issues/2760)
 
 # Pull Request
 
-[Please see these instructions for adding a pull request](http://habitica.wikia.com/wiki/Using_Habitica_Git#Pull_Request)
+[Please see these instructions for adding a pull request](http://habitica.wikia.com/wiki/Using_Your_Local_Install_to_Modify_Habitica%27s_Website_and_API)
 
 # Requesting a feature
 

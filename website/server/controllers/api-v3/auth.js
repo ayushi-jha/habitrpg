@@ -16,10 +16,15 @@ import { model as User } from '../../models/user';
 import { model as Group } from '../../models/group';
 import { model as EmailUnsubscription } from '../../models/emailUnsubscription';
 import { sendTxn as sendTxnEmail } from '../../libs/email';
-import { decrypt } from '../../libs/encryption';
+import { decrypt, encrypt } from '../../libs/encryption';
 import { send as sendEmail } from '../../libs/email';
 import pusher from '../../libs/pusher';
 import common from '../../../common';
+import { validatePasswordResetCodeAndFindUser, convertToBcrypt} from '../../libs/password';
+
+const BASE_URL = nconf.get('BASE_URL');
+const TECH_ASSISTANCE_EMAIL = nconf.get('EMAILS:TECH_ASSISTANCE_EMAIL');
+const COMMUNITY_MANAGER_EMAIL = nconf.get('EMAILS:COMMUNITY_MANAGER_EMAIL');
 
 let api = {};
 
@@ -42,8 +47,17 @@ async function _handleGroupInvitation (user, invite) {
 
     if (group.type === 'party') {
       user.invitations.party = {id: group._id, name: group.name, inviter};
+      user.invitations.parties.push(user.invitations.party);
     } else {
       user.invitations.guilds.push({id: group._id, name: group.name, inviter});
+    }
+
+    // award the inviter with 'Invited a Friend' achievement
+    inviter = await User.findById(inviter);
+    if (!inviter.achievements.invitedFriend) {
+      inviter.achievements.invitedFriend = true;
+      inviter.addNotification('INVITED_FRIEND_ACHIEVEMENT');
+      await inviter.save();
     }
   } catch (err) {
     logger.error(err);
@@ -68,10 +82,10 @@ function hasBackupAuth (user, networkToRemove) {
  * @apiName UserRegisterLocal
  * @apiGroup User
  *
- * @apiParam {String} username Body parameter - Username of the new user
- * @apiParam {String} email Body parameter - Email address of the new user
- * @apiParam {String} password Body parameter - Password for the new user
- * @apiParam {String} confirmPassword Body parameter - Password confirmation
+ * @apiParam (Body) {String} username Username of the new user
+ * @apiParam (Body) {String} email Email address of the new user
+ * @apiParam (Body) {String} password Password for the new user
+ * @apiParam (Body) {String} confirmPassword Password confirmation
  *
  * @apiSuccess {Object} data The user object, if local auth was just attached to a social user then only user.auth.local
  */
@@ -115,16 +129,15 @@ api.registerLocal = {
       if (lowerCaseUsername === user.auth.local.lowerCaseUsername) throw new NotAuthorized(res.t('usernameTaken'));
     }
 
-    let salt = passwordUtils.makeSalt();
-    let hashed_password = passwordUtils.encrypt(password, salt); // eslint-disable-line camelcase
+    let hashed_password = await passwordUtils.bcryptHash(password); // eslint-disable-line camelcase
     let newUser = {
       auth: {
         local: {
           username,
           lowerCaseUsername,
           email,
-          salt,
-          hashed_password, // eslint-disable-line camelcase
+          hashed_password, // eslint-disable-line camelcase,
+          passwordHashMethod: 'bcrypt',
         },
       },
       preferences: {
@@ -156,7 +169,9 @@ api.registerLocal = {
     if (existingUser) {
       res.respond(200, savedUser.toJSON().auth.local); // We convert to toJSON to hide private fields
     } else {
-      res.respond(201, savedUser);
+      let userJSON = savedUser.toJSON();
+      userJSON.newUser = true;
+      res.respond(201, userJSON);
     }
 
     // Clean previous email preferences and send welcome email
@@ -182,7 +197,7 @@ api.registerLocal = {
 };
 
 function _loginRes (user, req, res) {
-  if (user.auth.blocked) throw new NotAuthorized(res.t('accountSuspended', {userId: user._id}));
+  if (user.auth.blocked) throw new NotAuthorized(res.t('accountSuspended', {communityManagerEmail: COMMUNITY_MANAGER_EMAIL, userId: user._id}));
   return res.respond(200, {id: user._id, apiToken: user.apiToken, newUser: user.newUser || false});
 }
 
@@ -192,8 +207,8 @@ function _loginRes (user, req, res) {
  * @apiName UserLoginLocal
  * @apiGroup User
  *
- * @apiParam {String} username Body parameter - Username or email of the user
- * @apiParam {String} password Body parameter - The user's password
+ * @apiParam (Body) {String} username Username or email of the user
+ * @apiParam (Body) {String} password The user's password
  *
  * @apiSuccess {String} data._id The user's unique identifier
  * @apiSuccess {String} data.apiToken The user's api token that must be used to authenticate requests.
@@ -222,6 +237,7 @@ api.loginLocal = {
 
     let login;
     let username = req.body.username;
+    let password = req.body.password;
 
     if (validator.isEmail(username)) {
       login = {'auth.local.email': username.toLowerCase()}; // Emails are stored lowercase
@@ -229,9 +245,24 @@ api.loginLocal = {
       login = {'auth.local.username': username};
     }
 
-    let user = await User.findOne(login, {auth: 1, apiToken: 1}).exec();
-    let isValidPassword = user && user.auth.local.hashed_password === passwordUtils.encrypt(req.body.password, user.auth.local.salt);
+    // load the entire user because we may have to save it to convert the password to bcrypt
+    let user = await User.findOne(login).exec();
+
+    let isValidPassword;
+
+    if (!user) {
+      isValidPassword = false;
+    } else {
+      isValidPassword = await passwordUtils.compare(user, password);
+    }
+
     if (!isValidPassword) throw new NotAuthorized(res.t('invalidLoginCredentialsLong'));
+
+    // convert the hashed password to bcrypt from sha1
+    if (user.auth.local.passwordHashMethod === 'sha1') {
+      await passwordUtils.convertToBcrypt(user, password);
+      await user.save();
+    }
 
     res.analytics.track('login', {
       category: 'behaviour',
@@ -338,8 +369,8 @@ api.loginSocial = {
  * @apiName UserAuthPusher
  * @apiGroup User
  *
- * @apiParam {String} socket_id Body parameter
- * @apiParam {String} channel_name Body parameter
+ * @apiParam (Body) {String} socket_id A unique identifier for the specific client connection to Pusher
+ * @apiParam (Body) {String} channel_name The name of the channel being subscribed to
  *
  * @apiSuccess {String} auth The authentication token
  */
@@ -406,8 +437,8 @@ api.pusherAuth = {
  * @apiName UpdateUsername
  * @apiGroup User
  *
- * @apiParam {String} password Body parameter - The current user password
- * @apiParam {String} username Body parameter - The new username
+ * @apiParam (Body) {String} password The current user password
+ * @apiParam (Body) {String} username The new username
 
  * @apiSuccess {String} data.username The new username
  **/
@@ -432,11 +463,17 @@ api.updateUsername = {
 
     if (!user.auth.local.username) throw new BadRequest(res.t('userHasNoLocalRegistration'));
 
-    let oldPassword = passwordUtils.encrypt(req.body.password, user.auth.local.salt);
-    if (oldPassword !== user.auth.local.hashed_password) throw new NotAuthorized(res.t('wrongPassword'));
+    let password = req.body.password;
+    let isValidPassword = await passwordUtils.compare(user, password);
+    if (!isValidPassword) throw new NotAuthorized(res.t('wrongPassword'));
 
     let count = await User.count({ 'auth.local.lowerCaseUsername': req.body.username.toLowerCase() });
     if (count > 0) throw new BadRequest(res.t('usernameTaken'));
+
+    // if password is using old sha1 encryption, change it
+    if (user.auth.local.passwordHashMethod === 'sha1') {
+      await passwordUtils.convertToBcrypt(user, password); // user is saved a few lines below
+    }
 
     // save username
     user.auth.local.lowerCaseUsername = req.body.username.toLowerCase();
@@ -453,9 +490,9 @@ api.updateUsername = {
  * @apiName UpdatePassword
  * @apiGroup User
  *
- * @apiParam {String} password Body parameter - The old password
- * @apiParam {String} newPassword Body parameter - The new password
- * @apiParam {String} confirmPassword Body parameter - New password confirmation
+ * @apiParam (Body) {String} password The old password
+ * @apiParam (Body) {String} newPassword The new password
+ * @apiParam (Body) {String} confirmPassword New password confirmation
  *
  * @apiSuccess {Object} data An empty object
  **/
@@ -486,13 +523,17 @@ api.updatePassword = {
       throw validationErrors;
     }
 
-    let oldPassword = passwordUtils.encrypt(req.body.password, user.auth.local.salt);
-    if (oldPassword !== user.auth.local.hashed_password) throw new NotAuthorized(res.t('wrongPassword'));
+    let oldPassword = req.body.password;
+    let isValidPassword = await passwordUtils.compare(user, oldPassword);
+    if (!isValidPassword) throw new NotAuthorized(res.t('wrongPassword'));
 
-    if (req.body.newPassword !== req.body.confirmPassword) throw new NotAuthorized(res.t('passwordConfirmationMatch'));
+    let newPassword = req.body.newPassword;
+    if (newPassword !== req.body.confirmPassword) throw new NotAuthorized(res.t('passwordConfirmationMatch'));
 
-    user.auth.local.hashed_password = passwordUtils.encrypt(req.body.newPassword, user.auth.local.salt); // eslint-disable-line camelcase
+    // set new password and make sure it's using bcrypt for hashing
+    await passwordUtils.convertToBcrypt(user, newPassword);
     await user.save();
+
     res.respond(200, {});
   },
 };
@@ -503,7 +544,7 @@ api.updatePassword = {
  * @apiName ResetPassword
  * @apiGroup User
  *
- * @apiParam {String} email Body parameter - The email address of the user
+ * @apiParam (Body) {String} email The email address of the user
  *
  * @apiSuccess {String} message The localized success message
  **/
@@ -521,27 +562,30 @@ api.resetPassword = {
     if (validationErrors) throw validationErrors;
 
     let email = req.body.email.toLowerCase();
-    let salt = passwordUtils.makeSalt();
-    let newPassword =  passwordUtils.makeSalt(); // use a salt as the new password too (they'll change it later)
-    let hashedPassword = passwordUtils.encrypt(newPassword, salt);
-
-    let user = await User.findOne({ 'auth.local.email': email });
+    let user = await User.findOne({ 'auth.local.email': email }).exec();
 
     if (user) {
-      user.auth.local.salt = salt;
-      user.auth.local.hashed_password = hashedPassword; // eslint-disable-line camelcase
+      // create an encrypted link to be used to reset the password
+      const passwordResetCode = encrypt(JSON.stringify({
+        userId: user._id,
+        expiresAt: moment().add({ hours: 24 }),
+      }));
+      let link = `${BASE_URL}/static/user/auth/local/reset-password-set-new-one?code=${passwordResetCode}`;
+
+      user.auth.local.passwordResetCode = passwordResetCode;
+
       sendEmail({
         from: 'Habitica <admin@habitica.com>',
         to: email,
         subject: res.t('passwordResetEmailSubject'),
-        text: res.t('passwordResetEmailText', { username: user.auth.local.username,
-                                                newPassword,
-                                                baseUrl: nconf.get('BASE_URL'),
-                                              }),
-        html: res.t('passwordResetEmailHtml', { username: user.auth.local.username,
-                                                newPassword,
-                                                baseUrl: nconf.get('BASE_URL'),
-                                              }),
+        text: res.t('passwordResetEmailText', {
+          username: user.auth.local.username,
+          passwordResetLink: link,
+        }),
+        html: res.t('passwordResetEmailHtml', {
+          username: user.auth.local.username,
+          passwordResetLink: link,
+        }),
       });
 
       await user.save();
@@ -557,8 +601,8 @@ api.resetPassword = {
  * @apiName UpdateEmail
  * @apiGroup User
  *
- * @apiParam {String} Body parameter - newEmail The new email address.
- * @apiParam {String} Body parameter - password The user password.
+ * @apiParam (Body) {String} newEmail The new email address.
+ * @apiParam (Body) {String} password The user password.
  *
  * @apiSuccess {String} data.email The updated email address
  */
@@ -576,16 +620,67 @@ api.updateEmail = {
     let validationErrors = req.validationErrors();
     if (validationErrors) throw validationErrors;
 
-    let emailAlreadyInUse = await User.findOne({'auth.local.email': req.body.newEmail}).select({_id: 1}).lean().exec();
-    if (emailAlreadyInUse) throw new NotAuthorized(res.t('cannotFulfillReq'));
+    let emailAlreadyInUse = await User.findOne({
+      'auth.local.email': req.body.newEmail,
+    }).select({_id: 1}).lean().exec();
 
-    let candidatePassword = passwordUtils.encrypt(req.body.password, user.auth.local.salt);
-    if (candidatePassword !== user.auth.local.hashed_password) throw new NotAuthorized(res.t('wrongPassword'));
+    if (emailAlreadyInUse) throw new NotAuthorized(res.t('cannotFulfillReq', { techAssistanceEmail: TECH_ASSISTANCE_EMAIL }));
+
+    let password = req.body.password;
+    let isValidPassword = await passwordUtils.compare(user, password);
+    if (!isValidPassword) throw new NotAuthorized(res.t('wrongPassword'));
+
+    // if password is using old sha1 encryption, change it
+    if (user.auth.local.passwordHashMethod === 'sha1') {
+      await passwordUtils.convertToBcrypt(user, password);
+    }
 
     user.auth.local.email = req.body.newEmail;
     await user.save();
 
     return res.respond(200, { email: user.auth.local.email });
+  },
+};
+
+/**
+ * @api {post} /api/v3/user/auth/reset-password-set-new-one Reser Password Set New one
+ * @apiDescription Set a new password for a user that reset theirs. Not meant for public usage.
+ * @apiName ResetPasswordSetNewOne
+ * @apiGroup User
+ *
+ * @apiParam (Body) {String} newPassword The new password.
+ * @apiParam (Body) {String} confirmPassword Password confirmation.
+ *
+ * @apiSuccess {String} data An empty object
+ * @apiSuccess {String} data Success message
+ */
+api.resetPasswordSetNewOne = {
+  method: 'POST',
+  url: '/user/auth/reset-password-set-new-one',
+  async handler (req, res) {
+    let user = await validatePasswordResetCodeAndFindUser(req.body.code);
+    let isValidCode = Boolean(user);
+
+    if (!isValidCode) throw new NotAuthorized(res.t('invalidPasswordResetCode'));
+
+    req.checkBody('newPassword', res.t('missingNewPassword')).notEmpty();
+    req.checkBody('confirmPassword', res.t('missingNewPassword')).notEmpty();
+    let validationErrors = req.validationErrors();
+    if (validationErrors) throw validationErrors;
+
+    let newPassword = req.body.newPassword;
+    let confirmPassword = req.body.confirmPassword;
+
+    if (newPassword !== confirmPassword) {
+      throw new BadRequest(res.t('passwordConfirmationMatch'));
+    }
+
+    // set new password and make sure it's using bcrypt for hashing
+    await convertToBcrypt(user, String(newPassword));
+    user.auth.local.passwordResetCode = undefined; // Reset saved password reset code
+    await user.save();
+
+    return res.respond(200, {}, res.t('passwordChangeSuccess'));
   },
 };
 

@@ -8,10 +8,13 @@ import { schema as WebhookSchema } from '../webhook';
 import {
   schema as UserNotificationSchema,
 } from '../userNotification';
+import {
+  schema as SubscriptionPlanSchema,
+} from '../subscriptionPlan';
 
 const Schema = mongoose.Schema;
 
-const INVALID_DOMAINS = Object.freeze(['habitica.com', 'habitrpg.com']);
+const RESTRICTED_EMAIL_DOMAINS = Object.freeze(['habitica.com', 'habitrpg.com']);
 
 // User schema definition
 let schema = new Schema({
@@ -38,11 +41,11 @@ let schema = new Schema({
           validator (email) {
             let lowercaseEmail = email.toLowerCase();
 
-            return INVALID_DOMAINS.every((domain) => {
+            return RESTRICTED_EMAIL_DOMAINS.every((domain) => {
               return !lowercaseEmail.endsWith(`@${domain}`);
             });
           },
-          message: shared.i18n.t('invalidEmailDomain', { domains: INVALID_DOMAINS.join(', ')}),
+          message: shared.i18n.t('invalidEmailDomain', { domains: RESTRICTED_EMAIL_DOMAINS.join(', ')}),
         }],
       },
       username: {
@@ -51,7 +54,14 @@ let schema = new Schema({
       // Store a lowercase version of username to check for duplicates
       lowerCaseUsername: String,
       hashed_password: String, // eslint-disable-line camelcase
-      salt: String,
+      // Legacy password are hashed with SHA1, new ones with bcrypt
+      passwordHashMethod: {
+        type: String,
+        enum: ['bcrypt', 'sha1'],
+      },
+      salt: String, // Salt for SHA1 encrypted passwords, not stored for bcrypt,
+      // Used to validate password reset codes and make sure only the most recent one can be used
+      passwordResetCode: String,
     },
     timestamps: {
       created: {type: Date, default: Date.now},
@@ -92,7 +102,6 @@ let schema = new Schema({
     perfect: {type: Number, default: 0},
     habitBirthdays: Number,
     valentine: Number,
-    costumeContest: Boolean, // Superseded by costumeContests
     nye: Number,
     habiticaDays: Number,
     greeting: Number,
@@ -101,6 +110,14 @@ let schema = new Schema({
     birthday: Number,
     partyUp: Boolean,
     partyOn: Boolean,
+    congrats: Number,
+    getwell: Number,
+    goodluck: Number,
+    royallyLoyal: Boolean,
+    joinedGuild: Boolean,
+    joinedChallenge: Boolean,
+    invitedFriend: Boolean,
+    lostMasterclasser: Boolean,
   },
 
   backer: {
@@ -110,7 +127,7 @@ let schema = new Schema({
   },
 
   contributor: {
-    // 1-9, see https://trello.com/c/wkFzONhE/277-contributor-gear https://github.com/HabitRPG/habitrpg/issues/3801
+    // 1-9, see https://trello.com/c/wkFzONhE/277-contributor-gear https://github.com/HabitRPG/habitica/issues/3801
     level: {
       type: Number,
       min: 0,
@@ -144,24 +161,9 @@ let schema = new Schema({
     }},
     txnCount: {type: Number, default: 0},
     mobileChat: Boolean,
-    plan: {
-      planId: String,
-      paymentMethod: String, // enum: ['Paypal','Stripe', 'Gift', 'Amazon Payments', '']}
-      customerId: String, // Billing Agreement Id in case of Amazon Payments
-      dateCreated: Date,
-      dateTerminated: Date,
-      dateUpdated: Date,
-      extraMonths: {type: Number, default: 0},
-      gemsBought: {type: Number, default: 0},
-      mysteryItems: {type: Array, default: () => []},
-      lastBillingDate: Date, // Used only for Amazon Payments to keep track of billing date
-      consecutive: {
-        count: {type: Number, default: 0},
-        offset: {type: Number, default: 0}, // when gifted subs, offset++ for each month. offset-- each new-month (cron). count doesn't ++ until offset==0
-        gemCapExtra: {type: Number, default: 0},
-        trinkets: {type: Number, default: 0},
-      },
-    },
+    plan: {type: SubscriptionPlanSchema, default: () => {
+      return {};
+    }},
   },
 
   flags: {
@@ -198,6 +200,7 @@ let schema = new Schema({
         items: {type: Boolean, default: false},
         mounts: {type: Boolean, default: false},
         inbox: {type: Boolean, default: false},
+        stats: {type: Boolean, default: false},
       },
       ios: {
         addTask: {type: Boolean, default: false},
@@ -229,10 +232,11 @@ let schema = new Schema({
     lastWeeklyRecap: {type: Date, default: Date.now},
     // Used to enable weekly recap emails as users login
     lastWeeklyRecapDiscriminator: Boolean,
+    onboardingEmailsPhase: String, // Keep track of the latest onboarding email sent
     communityGuidelinesAccepted: {type: Boolean, default: false},
     cronCount: {type: Number, default: 0},
     welcomed: {type: Boolean, default: false},
-    armoireEnabled: {type: Boolean, default: false},
+    armoireEnabled: {type: Boolean, default: true},
     armoireOpened: {type: Boolean, default: false},
     armoireEmpty: {type: Boolean, default: false},
     cardReceived: {type: Boolean, default: false},
@@ -248,7 +252,7 @@ let schema = new Schema({
     gear: {
       owned: _.transform(shared.content.gear.flat, (m, v) => {
         m[v.key] = {type: Boolean};
-        if (v.key.match(/[armor|head|shield]_warrior_0/) || v.gearSet === 'glasses') {
+        if (v.key.match(/(armor|head|shield)_warrior_0/) || v.gearSet === 'glasses') {
           m[v.key].default = true;
         }
       }),
@@ -290,6 +294,12 @@ let schema = new Schema({
       thankyouReceived: Array,
       birthday: {type: Number, default: 0},
       birthdayReceived: Array,
+      congrats: {type: Number, default: 0},
+      congratsReceived: Array,
+      getwell: {type: Number, default: 0},
+      getwellReceived: Array,
+      goodluck: {type: Number, default: 0},
+      goodluckReceived: Array,
     },
 
     // -------------- Animals -------------------
@@ -375,6 +385,24 @@ let schema = new Schema({
     party: {type: Schema.Types.Mixed, default: () => {
       return {};
     }},
+    parties: [{
+      id: {
+        type: String,
+        ref: 'Group',
+        required: true,
+        validate: [validator.isUUID, 'Invalid uuid.'],
+      },
+      name: {
+        type: String,
+        required: true,
+      },
+      inviter: {
+        type: String,
+        ref: 'User',
+        required: true,
+        validate: [validator.isUUID, 'Invalid uuid.'],
+      },
+    }],
   },
 
   guilds: [{type: String, ref: 'Group', validate: [validator.isUUID, 'Invalid uuid.']}],
@@ -412,7 +440,7 @@ let schema = new Schema({
     skin: {type: String, default: '915533'},
     shirt: {type: String, default: 'blue'},
     timezoneOffset: {type: Number, default: 0},
-    sound: {type: String, default: 'rosstavoTheme', enum: ['off', 'danielTheBard', 'gokulTheme', 'luneFoxTheme', 'wattsTheme', 'rosstavoTheme', 'dewinTheme']},
+    sound: {type: String, default: 'rosstavoTheme', enum: ['off', ...shared.content.audioThemes]},
     chair: {type: String, default: 'none'},
     timezoneOffsetAtLastCron: Number,
     language: String,
@@ -426,7 +454,6 @@ let schema = new Schema({
     disableClasses: {type: Boolean, default: false},
     newTaskEdit: {type: Boolean, default: false},
     dailyDueDefaultView: {type: Boolean, default: false},
-    tagsCollapsed: {type: Boolean, default: false},
     advancedCollapsed: {type: Boolean, default: false},
     toolbarCollapsed: {type: Boolean, default: false},
     reverseChatOrder: {type: Boolean, default: false},
@@ -452,6 +479,7 @@ let schema = new Schema({
       // importantAnnouncements are in fact the recapture emails
       importantAnnouncements: {type: Boolean, default: true},
       weeklyRecaps: {type: Boolean, default: true},
+      onboarding: {type: Boolean, default: true},
     },
     pushNotifications: {
       unsubscribeFromAll: {type: Boolean, default: false},
@@ -470,6 +498,10 @@ let schema = new Schema({
       raisePet: {type: Boolean, default: false},
       streak: {type: Boolean, default: false},
     },
+    tasks: {
+      groupByChallenge: {type: Boolean, default: false},
+      confirmScoreNotes: {type: Boolean, default: false},
+    },
     improvementCategories: {
       type: Array,
       validate: (categories) => {
@@ -482,14 +514,18 @@ let schema = new Schema({
   profile: {
     blurb: String,
     imageUrl: String,
-    name: String,
+    name: {
+      type: String,
+      required: true,
+      trim: true,
+    },
   },
   stats: {
     hp: {type: Number, default: shared.maxHealth},
     mp: {type: Number, default: 10},
     exp: {type: Number, default: 0},
     gp: {type: Number, default: 0},
-    lvl: {type: Number, default: 1},
+    lvl: {type: Number, default: 1, min: 1},
 
     // Class System
     class: {type: String, enum: ['warrior', 'rogue', 'wizard', 'healer'], default: 'warrior', required: true},
@@ -539,8 +575,23 @@ let schema = new Schema({
     return {};
   }},
   pushDevices: [PushDeviceSchema],
-  _ABtest: {type: String},
+  _ABtests: {type: Schema.Types.Mixed, default: () => {
+    return {};
+  }},
   webhooks: [WebhookSchema],
+  loginIncentives: {type: Number, default: 0},
+  invitesSent: {type: Number, default: 0},
+
+  // Items manually pinned by the user
+  pinnedItems: [{
+    path: {type: String},
+    type: {type: String},
+  }],
+  // Items the user manually unpinned from the ones suggested by Habitica
+  unpinnedItems: [{
+    path: {type: String},
+    type: {type: String},
+  }],
 }, {
   strict: true,
   minimize: false, // So empty objects are returned

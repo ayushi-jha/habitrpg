@@ -1,4 +1,4 @@
-import {forOwn} from 'lodash';
+import forOwn from 'lodash/forOwn';
 import t from '../translation';
 
 /* eslint-disable camelcase */
@@ -409,13 +409,241 @@ let backgrounds = {
       notes: t('backgroundStrangeSewersNotes'),
     },
   },
+  backgrounds112016: {
+    midnight_clouds: {
+      text: t('backgroundMidnightCloudsText'),
+      notes: t('backgroundMidnightCloudsNotes'),
+    },
+    stormy_rooftops: {
+      text: t('backgroundStormyRooftopsText'),
+      notes: t('backgroundStormyRooftopsNotes'),
+    },
+    windy_autumn: {
+      text: t('backgroundWindyAutumnText'),
+      notes: t('backgroundWindyAutumnNotes'),
+    },
+  },
+  backgrounds122016: {
+    shimmering_ice_prism: {
+      text: t('backgroundShimmeringIcePrismText'),
+      notes: t('backgroundShimmeringIcePrismNotes'),
+    },
+    winter_fireworks: {
+      text: t('backgroundWinterFireworksText'),
+      notes: t('backgroundWinterFireworksNotes'),
+    },
+    winter_storefront: {
+      text: t('backgroundWinterStorefrontText'),
+      notes: t('backgroundWinterStorefrontNotes'),
+    },
+  },
+  backgrounds012017: {
+    blizzard: {
+      text: t('backgroundBlizzardText'),
+      notes: t('backgroundBlizzardNotes'),
+    },
+    sparkling_snowflake: {
+      text: t('backgroundSparklingSnowflakeText'),
+      notes: t('backgroundSparklingSnowflakeNotes'),
+    },
+    stoikalm_volcanoes: {
+      text: t('backgroundStoikalmVolcanoesText'),
+      notes: t('backgroundStoikalmVolcanoesNotes'),
+    },
+  },
+  backgrounds022017: {
+    bell_tower: {
+      text: t('backgroundBellTowerText'),
+      notes: t('backgroundBellTowerNotes'),
+    },
+    treasure_room: {
+      text: t('backgroundTreasureRoomText'),
+      notes: t('backgroundTreasureRoomNotes'),
+    },
+    wedding_arch: {
+      text: t('backgroundWeddingArchText'),
+      notes: t('backgroundWeddingArchNotes'),
+    },
+  },
+  backgrounds032017: {
+    magic_beanstalk: {
+      text: t('backgroundMagicBeanstalkText'),
+      notes: t('backgroundMagicBeanstalkNotes'),
+    },
+    meandering_cave: {
+      text: t('backgroundMeanderingCaveText'),
+      notes: t('backgroundMeanderingCaveNotes'),
+    },
+    mistiflying_circus: {
+      text: t('backgroundMistiflyingCircusText'),
+      notes: t('backgroundMistiflyingCircusNotes'),
+    },
+  },
+  backgrounds042017: {
+    bug_covered_log: {
+      text: t('backgroundBugCoveredLogText'),
+      notes: t('backgroundBugCoveredLogNotes'),
+    },
+    giant_birdhouse: {
+      text: t('backgroundGiantBirdhouseText'),
+      notes: t('backgroundGiantBirdhouseNotes'),
+    },
+    mist_shrouded_mountain: {
+      text: t('backgroundMistShroudedMountainText'),
+      notes: t('backgroundMistShroudedMountainNotes'),
+    },
+  },
+  backgrounds052017: {
+    guardian_statues: {
+      text: t('backgroundGuardianStatuesText'),
+      notes: t('backgroundGuardianStatuesNotes'),
+    },
+    habit_city_streets: {
+      text: t('backgroundHabitCityStreetsText'),
+      notes: t('backgroundHabitCityStreetsNotes'),
+    },
+    on_tree_branch: {
+      text: t('backgroundOnATreeBranchText'),
+      notes: t('backgroundOnATreeBranchNotes'),
+    },
+  },
+  backgrounds062017: {
+    buried_treasure: {
+      text: t('backgroundBuriedTreasureText'),
+      notes: t('backgroundBuriedTreasureNotes'),
+    },
+    ocean_sunrise: {
+      text: t('backgroundOceanSunriseText'),
+      notes: t('backgroundOceanSunriseNotes'),
+    },
+    sandcastle: {
+      text: t('backgroundSandcastleText'),
+      notes: t('backgroundSandcastleNotes'),
+    },
+  },
+  backgrounds072017: {
+    giant_seashell: {
+      text: t('backgroundGiantSeashellText'),
+      notes: t('backgroundGiantSeashellNotes'),
+    },
+    kelp_forest: {
+      text: t('backgroundKelpForestText'),
+      notes: t('backgroundKelpForestNotes'),
+    },
+    midnight_lake: {
+      text: t('backgroundMidnightLakeText'),
+      notes: t('backgroundMidnightLakeNotes'),
+    },
+  },
+  backgrounds082017: {
+    back_of_giant_beast: {
+      text: t('backgroundBackOfGiantBeastText'),
+      notes: t('backgroundBackOfGiantBeastNotes'),
+    },
+    desert_dunes: {
+      text: t('backgroundDesertDunesText'),
+      notes: t('backgroundDesertDunesNotes'),
+    },
+    summer_fireworks: {
+      text: t('backgroundSummerFireworksText'),
+      notes: t('backgroundSummerFireworksNotes'),
+    },
+  },
+  backgrounds092017: {
+    beside_well: {
+      text: t('backgroundBesideWellText'),
+      notes: t('backgroundBesideWellNotes'),
+    },
+    garden_shed: {
+      text: t('backgroundGardenShedText'),
+      notes: t('backgroundGardenShedNotes'),
+    },
+    pixelists_workshop: {
+      text: t('backgroundPixelistsWorkshopText'),
+      notes: t('backgroundPixelistsWorkshopNotes'),
+    },
+  },
+  backgrounds102017: {
+    magical_candles: {
+      text: t('backgroundMagicalCandlesText'),
+      notes: t('backgroundMagicalCandlesNotes'),
+    },
+    spooky_hotel: {
+      text: t('backgroundSpookyHotelText'),
+      notes: t('backgroundSpookyHotelNotes'),
+    },
+    tar_pits: {
+      text: t('backgroundTarPitsText'),
+      notes: t('backgroundTarPitsNotes'),
+    },
+  },
+  backgrounds112017: {
+    fiber_arts_room: {
+      text: t('backgroundFiberArtsRoomText'),
+      notes: t('backgroundFiberArtsRoomNotes'),
+    },
+    midnight_castle: {
+      text: t('backgroundMidnightCastleText'),
+      notes: t('backgroundMidnightCastleNotes'),
+    },
+    tornado: {
+      text: t('backgroundTornadoText'),
+      notes: t('backgroundTornadoNotes'),
+    },
+  },
+  incentiveBackgrounds: {
+    violet: {
+      text: t('backgroundVioletText'),
+      notes: t('backgroundVioletNotes'),
+      currency: 'loginIncentive',
+    },
+    blue: {
+      text: t('backgroundBlueText'),
+      notes: t('backgroundBlueNotes'),
+      currency: 'loginIncentive',
+    },
+    green: {
+      text: t('backgroundGreenText'),
+      notes: t('backgroundGreenNotes'),
+      currency: 'loginIncentive',
+    },
+    purple: {
+      text: t('backgroundPurpleText'),
+      notes: t('backgroundPurpleNotes'),
+      currency: 'loginIncentive',
+    },
+    red: {
+      text: t('backgroundRedText'),
+      notes: t('backgroundRedNotes'),
+      currency: 'loginIncentive',
+    },
+    yellow: {
+      text: t('backgroundYellowText'),
+      notes: t('backgroundYellowNotes'),
+      currency: 'loginIncentive',
+    },
+  },
 };
 /* eslint-enable quote-props */
 
-forOwn(backgrounds, function prefillBackgroundSet (value) {
-  forOwn(value, function prefillBackground (bgObject) {
-    bgObject.price = 7;
+let flat = {};
+
+forOwn(backgrounds, function prefillBackgroundSet (backgroundsInSet, set) {
+  forOwn(backgroundsInSet, function prefillBackground (background, bgKey) {
+    background.key = bgKey;
+    background.set = set;
+    background.price = 7;
+
+    flat[bgKey] = background;
   });
 });
 
-module.exports = backgrounds;
+export default backgrounds;
+
+export function backgroundsTree () {
+  return backgrounds;
+}
+
+export function backgroundsFlat () {
+  return flat;
+}

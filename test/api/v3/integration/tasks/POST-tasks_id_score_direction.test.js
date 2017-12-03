@@ -130,6 +130,7 @@ describe('POST /tasks/:id/score/:direction', () => {
     });
 
     it('uncompletes todo when direction is down', async () => {
+      await user.post(`/tasks/${todo._id}/score/up`);
       await user.post(`/tasks/${todo._id}/score/down`);
       let updatedTask = await user.get(`/tasks/${todo._id}`);
 
@@ -137,9 +138,23 @@ describe('POST /tasks/:id/score/:direction', () => {
       expect(updatedTask.dateCompleted).to.be.a('undefined');
     });
 
-    it('scores up todo even if it is already completed'); // Yes?
+    it('doesn\'t let a todo be completed twice', async () => {
+      await user.post(`/tasks/${todo._id}/score/up`);
+      await expect(user.post(`/tasks/${todo._id}/score/up`))
+      .to.eventually.be.rejected.and.eql({
+        code: 401,
+        error: 'NotAuthorized',
+        message: t('sessionOutdated'),
+      });
+    });
 
-    it('scores down todo even if it is already uncompleted'); // Yes?
+    it('doesn\'t let a todo be uncompleted twice', async () => {
+      await expect(user.post(`/tasks/${todo._id}/score/down`)).to.eventually.be.rejected.and.eql({
+        code: 401,
+        error: 'NotAuthorized',
+        message: t('sessionOutdated'),
+      });
+    });
 
     context('user stats when direction is up', () => {
       let updatedUser;
@@ -163,23 +178,25 @@ describe('POST /tasks/:id/score/:direction', () => {
     });
 
     context('user stats when direction is down', () => {
-      let updatedUser;
+      let updatedUser, initialUser;
 
       beforeEach(async () => {
+        await user.post(`/tasks/${todo._id}/score/up`);
+        initialUser = await user.get('/user');
         await user.post(`/tasks/${todo._id}/score/down`);
         updatedUser = await user.get('/user');
       });
 
       it('decreases user\'s mp', () => {
-        expect(updatedUser.stats.mp).to.be.lessThan(user.stats.mp);
+        expect(updatedUser.stats.mp).to.be.lessThan(initialUser.stats.mp);
       });
 
       it('decreases user\'s exp', () => {
-        expect(updatedUser.stats.exp).to.be.lessThan(user.stats.exp);
+        expect(updatedUser.stats.exp).to.be.lessThan(initialUser.stats.exp);
       });
 
       it('decreases user\'s gold', () => {
-        expect(updatedUser.stats.gp).to.be.lessThan(user.stats.gp);
+        expect(updatedUser.stats.gp).to.be.lessThan(initialUser.stats.gp);
       });
     });
   });
@@ -202,15 +219,43 @@ describe('POST /tasks/:id/score/:direction', () => {
     });
 
     it('uncompletes daily when direction is down', async () => {
+      await user.post(`/tasks/${daily._id}/score/up`);
       await user.post(`/tasks/${daily._id}/score/down`);
       let task = await user.get(`/tasks/${daily._id}`);
 
       expect(task.completed).to.equal(false);
     });
 
-    it('scores up daily even if it is already completed'); // Yes?
+    it('computes isDue', async () => {
+      await user.post(`/tasks/${daily._id}/score/up`);
+      let task = await user.get(`/tasks/${daily._id}`);
 
-    it('scores down daily even if it is already uncompleted'); // Yes?
+      expect(task.isDue).to.equal(true);
+    });
+
+    it('computes nextDue', async () => {
+      await user.post(`/tasks/${daily._id}/score/up`);
+      let task = await user.get(`/tasks/${daily._id}`);
+
+      expect(task.nextDue.length).to.eql(6);
+    });
+
+    it('doesn\'t let a daily be completed twice', async () => {
+      await user.post(`/tasks/${daily._id}/score/up`);
+      await expect(user.post(`/tasks/${daily._id}/score/up`)).to.eventually.be.rejected.and.eql({
+        code: 401,
+        error: 'NotAuthorized',
+        message: t('sessionOutdated'),
+      });
+    });
+
+    it('doesn\'t let a daily be uncompleted twice', async () => {
+      await expect(user.post(`/tasks/${daily._id}/score/down`)).to.eventually.be.rejected.and.eql({
+        code: 401,
+        error: 'NotAuthorized',
+        message: t('sessionOutdated'),
+      });
+    });
 
     context('user stats when direction is up', () => {
       let updatedUser;
@@ -234,23 +279,25 @@ describe('POST /tasks/:id/score/:direction', () => {
     });
 
     context('user stats when direction is down', () => {
-      let updatedUser;
+      let updatedUser, initialUser;
 
       beforeEach(async () => {
+        await user.post(`/tasks/${daily._id}/score/up`);
+        initialUser = await user.get('/user');
         await user.post(`/tasks/${daily._id}/score/down`);
         updatedUser = await user.get('/user');
       });
 
       it('decreases user\'s mp', () => {
-        expect(updatedUser.stats.mp).to.be.lessThan(user.stats.mp);
+        expect(updatedUser.stats.mp).to.be.lessThan(initialUser.stats.mp);
       });
 
       it('decreases user\'s exp', () => {
-        expect(updatedUser.stats.exp).to.be.lessThan(user.stats.exp);
+        expect(updatedUser.stats.exp).to.be.lessThan(initialUser.stats.exp);
       });
 
       it('decreases user\'s gold', () => {
-        expect(updatedUser.stats.gp).to.be.lessThan(user.stats.gp);
+        expect(updatedUser.stats.gp).to.be.lessThan(initialUser.stats.gp);
       });
     });
   });
@@ -314,6 +361,30 @@ describe('POST /tasks/:id/score/:direction', () => {
       let updatedUser = await user.get('/user');
 
       expect(updatedUser.stats.gp).to.be.greaterThan(user.stats.gp);
+    });
+
+    it('adds score notes to task', async () => {
+      let scoreNotesString = 'test-notes';
+
+      await user.post(`/tasks/${habit._id}/score/up`, {
+        scoreNotes: scoreNotesString,
+      });
+      let updatedTask = await user.get(`/tasks/${habit._id}`);
+
+      expect(updatedTask.history[0].scoreNotes).to.eql(scoreNotesString);
+    });
+
+    it('errors when score notes are too large', async () => {
+      let scoreNotesString = new Array(258).join('a');
+
+      await expect(user.post(`/tasks/${habit._id}/score/up`, {
+        scoreNotes: scoreNotesString,
+      }))
+      .to.eventually.be.rejected.and.eql({
+        code: 401,
+        error: 'NotAuthorized',
+        message: t('taskScoreNotesTooLong'),
+      });
     });
   });
 

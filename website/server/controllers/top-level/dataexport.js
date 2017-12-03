@@ -12,7 +12,6 @@ import Pageres from 'pageres';
 import nconf from 'nconf';
 import got from 'got';
 import Bluebird from 'bluebird';
-import locals from '../../middlewares/locals';
 import md from 'habitica-markdown';
 import {
   S3,
@@ -93,13 +92,12 @@ async function _getUserDataForExport (user) {
     userId: user._id,
   }).exec();
 
-  tasks = _.chain(tasks)
+  _(tasks)
     .map(task => task.toJSON())
     .groupBy(task => task.type)
-    .each((tasksPerType, taskType) => {
+    .forEach((tasksPerType, taskType) => {
       userData.tasks[`${taskType}s`] = tasksPerType;
-    })
-    .value();
+    });
 
   return userData;
 }
@@ -161,10 +159,11 @@ api.exportUserDataXml = {
  *
  * @apiUse UserNotFound
  */
+ // @TODO fix
 api.exportUserAvatarHtml = {
   method: 'GET',
   url: '/export/avatar-:memberId.html',
-  middlewares: [locals],
+  // middlewares: [locals],
   async handler (req, res) {
     req.checkParams('memberId', res.t('memberIdRequired')).notEmpty().isUUID();
 

@@ -3,7 +3,6 @@ import _ from 'lodash';
 import {
   getUserLanguage,
 } from '../middlewares/language';
-import cron from '../middlewares/cron';
 
 // Wrapper function to handler `async` route handlers that return promises
 // It takes the async function, execute it and pass any error to next (args[2])
@@ -12,7 +11,7 @@ let noop = (req, res, next) =>  next();
 
 module.exports.readController = function readController (router, controller) {
   _.each(controller, (action) => {
-    let {method, url, middlewares = [], handler, runCron} = action;
+    let {method, url, middlewares = [], handler} = action;
 
     // If an authentication middleware is used run getUserLanguage after it, otherwise before
     // for cron instead use it only if an authentication middleware is present
@@ -26,18 +25,16 @@ module.exports.readController = function readController (router, controller) {
 
     let middlewaresToAdd = [getUserLanguage];
 
-    if (authMiddlewareIndex !== -1) { // the user will be authenticated, getUserLanguage and cron after authentication
-      if (!(runCron === false)) { // eslint-disable-line no-extra-parens
-        middlewaresToAdd.push(cron);
+    if (action.noLanguage !== true) {
+      if (authMiddlewareIndex !== -1) { // the user will be authenticated, getUserLanguage after authentication
+        if (authMiddlewareIndex === middlewares.length - 1) {
+          middlewares.push(...middlewaresToAdd);
+        } else {
+          middlewares.splice(authMiddlewareIndex + 1, 0, ...middlewaresToAdd);
+        }
+      } else { // no auth, getUserLanguage as the first middleware
+        middlewares.unshift(...middlewaresToAdd);
       }
-
-      if (authMiddlewareIndex === middlewares.length - 1) {
-        middlewares.push(...middlewaresToAdd);
-      } else {
-        middlewares.splice(authMiddlewareIndex + 1, 0, ...middlewaresToAdd);
-      }
-    } else { // no auth, getUserLanguage as the first middleware
-      middlewares.unshift(...middlewaresToAdd);
     }
 
     method = method.toLowerCase();

@@ -5,15 +5,19 @@ import {
   NotAuthorized,
   NotFound,
 } from '../libs/errors';
-import _ from 'lodash';
+import get from 'lodash/get';
 
 // buy a quest with gold
 module.exports = function buyQuest (user, req = {}, analytics) {
-  let key = _.get(req, 'params.key');
+  let key = get(req, 'params.key');
   if (!key) throw new BadRequest(i18n.t('missingKeyParam', req.language));
 
   let item = content.quests[key];
   if (!item) throw new NotFound(i18n.t('questNotFound', {key}, req.language));
+
+  if (key === 'lostMasterclasser1' && !(user.achievements.quests.dilatoryDistress3 && user.achievements.quests.mayhemMistiflying3 && user.achievements.quests.stoikalmCalamity3 && user.achievements.quests.taskwoodsTerror3)) {
+    throw new NotAuthorized(i18n.t('questUnlockLostMasterclasser', req.language));
+  }
 
   if (!(item.category === 'gold' && item.goldValue)) {
     throw new NotAuthorized(i18n.t('questNotGoldPurchasable', {key}, req.language));

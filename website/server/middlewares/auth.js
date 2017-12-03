@@ -4,12 +4,15 @@ import {
 import {
   model as User,
 } from '../models/user';
+import nconf from 'nconf';
+
+const COMMUNITY_MANAGER_EMAIL = nconf.get('EMAILS:COMMUNITY_MANAGER_EMAIL');
 
 // Strins won't be translated here because getUserLanguage has not run yet
 
 // Authenticate a request through the x-api-user and x-api key header
 // If optional is true, don't error on missing authentication
-export function authWithHeaders (optional = false) {
+export function authWithHeaders (optional = false, userFieldProjection = '') {
   return function authWithHeadersHandler (req, res, next) {
     let userId = req.header('x-api-user');
     let apiToken = req.header('x-api-key');
@@ -19,14 +22,20 @@ export function authWithHeaders (optional = false) {
       return next(new NotAuthorized(res.t('missingAuthHeaders')));
     }
 
-    return User.findOne({
+    const userQuery = {
       _id: userId,
       apiToken,
-    })
+    };
+
+    let fields = '';
+    if (userFieldProjection) fields = `notifications ${userFieldProjection}`;
+    const findPromise = fields ? User.findOne(userQuery, fields) : User.findOne(userQuery);
+
+    return findPromise
     .exec()
     .then((user) => {
       if (!user) throw new NotAuthorized(res.t('invalidCredentials'));
-      if (user.auth.blocked) throw new NotAuthorized(res.t('accountSuspended', {userId: user._id}));
+      if (user.auth.blocked) throw new NotAuthorized(res.t('accountSuspended', {communityManagerEmail: COMMUNITY_MANAGER_EMAIL, userId: user._id}));
 
       res.locals.user = user;
 

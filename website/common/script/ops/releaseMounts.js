@@ -5,23 +5,33 @@ import {
 } from '../libs/errors';
 
 module.exports = function releaseMounts (user, req = {}, analytics) {
-  let mount;
-
   if (user.balance < 1) {
     throw new NotAuthorized(i18n.t('notEnoughGems', req.language));
   }
 
   user.balance -= 1;
-  user.items.currentMount = '';
 
-  for (mount in content.pets) {
+  let giveMountMasterAchievement = true;
+
+  let mountInfo = content.mountInfo[user.items.currentMount];
+
+  if (mountInfo && mountInfo.type === 'drop') {
+    user.items.currentMount = '';
+  }
+
+  for (let mount in content.pets) {
+    if (user.items.mounts[mount] === null || user.items.mounts[mount] === undefined) {
+      giveMountMasterAchievement = false;
+    }
     user.items.mounts[mount] = null;
   }
 
-  if (!user.achievements.mountMasterCount) {
-    user.achievements.mountMasterCount = 0;
+  if (giveMountMasterAchievement) {
+    if (!user.achievements.mountMasterCount) {
+      user.achievements.mountMasterCount = 0;
+    }
+    user.achievements.mountMasterCount++;
   }
-  user.achievements.mountMasterCount++;
 
   if (analytics) {
     analytics.track('release mounts', {

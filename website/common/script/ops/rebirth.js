@@ -1,11 +1,13 @@
 import i18n from '../i18n';
-import _ from 'lodash';
+import each from 'lodash/each';
 import { capByLevel } from '../statHelpers';
 import { MAX_LEVEL } from '../constants';
 import {
   NotAuthorized,
 } from '../libs/errors';
 import equip from './equip';
+import { removePinnedGearByClass } from './pinnedGearUtils';
+
 
 const USERSTATSLIST = ['per', 'int', 'con', 'str', 'points', 'gp', 'exp', 'mp'];
 
@@ -35,7 +37,7 @@ module.exports = function rebirth (user, tasks = [], req = {}, analytics) {
 
   let lvl = capByLevel(user.stats.lvl);
 
-  _.each(tasks, function resetTasks (task) {
+  each(tasks, function resetTasks (task) {
     if (!task.challenge || !task.challenge.id || task.challenge.broken) {
       if (task.type !== 'reward') {
         task.value = 0;
@@ -46,6 +48,8 @@ module.exports = function rebirth (user, tasks = [], req = {}, analytics) {
     }
   });
 
+  removePinnedGearByClass(user);
+
   let stats = user.stats;
   stats.buffs = {};
   stats.hp = 50;
@@ -54,7 +58,7 @@ module.exports = function rebirth (user, tasks = [], req = {}, analytics) {
 
   user.preferences.automaticAllocation = false;
 
-  _.each(USERSTATSLIST, function resetStats (value) {
+  each(USERSTATSLIST, function resetStats (value) {
     stats[value] = 0;
   });
 
@@ -77,12 +81,10 @@ module.exports = function rebirth (user, tasks = [], req = {}, analytics) {
   }
 
   let flags = user.flags;
-  if (!user.achievements.beastMaster) {
-    flags.rebirthEnabled = false;
-  }
   flags.itemsEnabled = false;
   flags.dropsEnabled = false;
   flags.classSelected = false;
+  flags.rebirthEnabled = false;
   flags.levelDrops = {};
 
   if (!user.achievements.rebirths) {
@@ -93,7 +95,7 @@ module.exports = function rebirth (user, tasks = [], req = {}, analytics) {
     user.achievements.rebirthLevel = lvl;
   }
 
-  user.addNotification('REBIRTH_ACHIEVEMENT');
+  if (user.addNotification) user.addNotification('REBIRTH_ACHIEVEMENT');
 
   user.stats.buffs = {};
 

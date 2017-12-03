@@ -1,3 +1,4 @@
+import moment from 'moment';
 import {
   generateUser,
   generateGroup,
@@ -74,6 +75,7 @@ describe('PUT /tasks/:id', () => {
         checklist: [
           {text: 123, completed: false},
         ],
+        collapseChecklist: false,
       });
       await sleep(2);
 
@@ -111,6 +113,7 @@ describe('PUT /tasks/:id', () => {
           {text: 123, completed: false},
           {text: 456, completed: true},
         ],
+        collapseChecklist: true,
         notes: 'new notes',
         attribute: 'per',
         tags: [challengeUserTaskId],
@@ -143,6 +146,8 @@ describe('PUT /tasks/:id', () => {
       expect(savedChallengeUserTask.streak).to.equal(25);
       expect(savedChallengeUserTask.reminders.length).to.equal(2);
       expect(savedChallengeUserTask.checklist.length).to.equal(2);
+      expect(savedChallengeUserTask.alias).to.equal('a-short-task-name');
+      expect(savedChallengeUserTask.collapseChecklist).to.equal(true);
     });
   });
 
@@ -391,12 +396,17 @@ describe('PUT /tasks/:id', () => {
         notes: 'some new notes',
         frequency: 'daily',
         everyX: 5,
+        yesterDaily: false,
+        startDate: moment().add(1, 'days').toDate(),
       });
 
       expect(savedDaily.text).to.eql('some new text');
       expect(savedDaily.notes).to.eql('some new notes');
       expect(savedDaily.frequency).to.eql('daily');
       expect(savedDaily.everyX).to.eql(5);
+      expect(savedDaily.isDue).to.be.false;
+      expect(savedDaily.nextDue.length).to.eql(6);
+      expect(savedDaily.yesterDaily).to.be.false;
     });
 
     it('can update checklists (replace it)', async () => {

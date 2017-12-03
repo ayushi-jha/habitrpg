@@ -1,6 +1,7 @@
 import content from '../content/index';
 import i18n from '../i18n';
-import _ from 'lodash';
+import get from 'lodash/get';
+import pick from 'lodash/pick';
 import splitWhitespace from '../libs/splitWhitespace';
 import {
   BadRequest,
@@ -10,8 +11,10 @@ import {
 import handleTwoHanded from '../fns/handleTwoHanded';
 import ultimateGear from '../fns/ultimateGear';
 
+import { removePinnedGearAddPossibleNewOnes } from './pinnedGearUtils';
+
 module.exports = function buyGear (user, req = {}, analytics) {
-  let key = _.get(req, 'params.key');
+  let key = get(req, 'params.key');
   if (!key) throw new BadRequest(i18n.t('missingKeyParam', req.language));
 
   let item = content.gear.flat[key];
@@ -37,7 +40,8 @@ module.exports = function buyGear (user, req = {}, analytics) {
     message = handleTwoHanded(user, item, undefined, req);
   }
 
-  user.items.gear.owned[item.key] = true;
+
+  removePinnedGearAddPossibleNewOnes(user, `gear.flat.${item.key}`, item.key);
 
   if (item.last) ultimateGear(user);
 
@@ -61,7 +65,7 @@ module.exports = function buyGear (user, req = {}, analytics) {
   }
 
   return [
-    _.pick(user, splitWhitespace('items achievements stats flags')),
+    pick(user, splitWhitespace('items achievements stats flags')),
     message,
   ];
 };

@@ -18,9 +18,13 @@ import { syncableAttrs } from '../libs/taskManager';
 
 const Schema = mongoose.Schema;
 
+const MIN_SHORTNAME_SIZE_FOR_CHALLENGES = shared.constants.MIN_SHORTNAME_SIZE_FOR_CHALLENGES;
+const MAX_SUMMARY_SIZE_FOR_CHALLENGES = shared.constants.MAX_SUMMARY_SIZE_FOR_CHALLENGES;
+
 let schema = new Schema({
   name: {type: String, required: true},
-  shortName: {type: String, required: true, minlength: 3},
+  shortName: {type: String, required: true, minlength: MIN_SHORTNAME_SIZE_FOR_CHALLENGES},
+  summary: {type: String, maxlength: MAX_SUMMARY_SIZE_FOR_CHALLENGES},
   description: String,
   official: {type: Boolean, default: false},
   tasksOrder: {
@@ -33,6 +37,10 @@ let schema = new Schema({
   group: {type: String, ref: 'Group', validate: [validator.isUUID, 'Invalid uuid.'], required: true},
   memberCount: {type: Number, default: 1},
   prize: {type: Number, default: 0, min: 0},
+  categories: [{
+    slug: {type: String},
+    name: {type: String},
+  }],
 }, {
   strict: true,
   minimize: false, // So empty objects are returned
@@ -41,6 +49,18 @@ let schema = new Schema({
 schema.plugin(baseModel, {
   noSet: ['_id', 'memberCount', 'tasksOrder'],
   timestamps: true,
+});
+
+schema.pre('init', function ensureSummaryIsFetched (next, chal) {
+  // The Vue website makes the summary be mandatory for all new challenges, but the
+  // Angular website did not, and the API does not yet for backwards-compatibilty.
+  // When any challenge without a summary is fetched from the database, this code
+  // supplies the name as the summary. This can be removed when all challenges have
+  // a summary and the API makes it mandatory (a breaking change!)
+  if (!chal.summary) {
+    chal.summary = chal.name ? chal.name.substring(0, MAX_SUMMARY_SIZE_FOR_CHALLENGES) : ' ';
+  }
+  next();
 });
 
 // A list of additional fields that cannot be updated (but can be set on creation)
@@ -79,8 +99,11 @@ schema.methods.syncToUser = async function syncChallengeToUser (user) {
   challenge.shortName = challenge.shortName || challenge.name;
 
   // Add challenge to user.challenges
-  if (!_.contains(user.challenges, challenge._id)) user.challenges.push(challenge._id);
-
+  if (!_.includes(user.challenges, challenge._id)) {
+    // using concat because mongoose's protection against concurrent array modification isn't working as expected.
+    // see https://github.com/HabitRPG/habitica/pull/7787#issuecomment-232972394
+    user.challenges = user.challenges.concat([challenge._id]);
+  }
   // Sync tags
   let userTags = user.tags;
   let i = _.findIndex(userTags, {id: challenge._id});
@@ -88,6 +111,7 @@ schema.methods.syncToUser = async function syncChallengeToUser (user) {
   if (i !== -1) {
     if (userTags[i].name !== challenge.shortName) {
       // update the name - it's been changed since
+      // @TODO: We probably want to remove this. Owner is not allowed to change participant's copy of the tag.
       userTags[i].name = challenge.shortName;
     }
   } else {
@@ -118,7 +142,7 @@ schema.methods.syncToUser = async function syncChallengeToUser (user) {
 
     if (!matchingTask) { // If the task is new, create it
       matchingTask = new Tasks[chalTask.type](Tasks.Task.sanitize(syncableAttrs(chalTask)));
-      matchingTask.challenge = {taskId: chalTask._id, id: challenge._id};
+      matchingTask.challenge = {taskId: chalTask._id, id: challenge._id, shortName: challenge.shortName};
       matchingTask.userId = user._id;
       user.tasksOrder[`${chalTask.type}s`].push(matchingTask._id);
     } else {
@@ -155,8 +179,9 @@ async function _addTaskFn (challenge, tasks, memberId) {
 
   tasks.forEach(chalTask => {
     let userTask = new Tasks[chalTask.type](Tasks.Task.sanitize(syncableAttrs(chalTask)));
-    userTask.challenge = {taskId: chalTask._id, id: challenge._id};
+    userTask.challenge = {taskId: chalTask._id, id: challenge._id, shortName: challenge.shortName};
     userTask.userId = memberId;
+    userTask.notes = chalTask.notes; // We want to sync the notes when the task is first added to the challenge
 
     let tasksOrderList = updateTasksOrderQ.$push[`tasksOrder.${chalTask.type}s`];
     if (!tasksOrderList) {
@@ -233,13 +258,14 @@ schema.methods.unlinkTasks = async function challengeUnlinkTasks (user, keep) {
   };
 
   removeFromArray(user.challenges, challengeId);
+  this.memberCount--;
 
   if (keep === 'keep-all') {
     await Tasks.Task.update(findQuery, {
       $set: {challenge: {}},
     }, {multi: true}).exec();
 
-    await user.save();
+    return Bluebird.all([user.save(), this.save()]);
   } else { // keep = 'remove-all'
     let tasks = await Tasks.Task.find(findQuery).select('_id type completed').exec();
     let taskPromises = tasks.map(task => {
@@ -251,7 +277,7 @@ schema.methods.unlinkTasks = async function challengeUnlinkTasks (user, keep) {
       return task.remove();
     });
     user.markModified('tasksOrder');
-    taskPromises.push(user.save());
+    taskPromises.push(user.save(), this.save());
     return Bluebird.all(taskPromises);
   }
 };
@@ -278,7 +304,15 @@ schema.methods.closeChal = async function closeChal (broken = {}) {
   // Award prize to winner and notify
   if (winner) {
     winner.achievements.challenges.push(challenge.name);
-    winner.balance += challenge.prize / 4;
+
+    // If the winner cannot get gems (because of a group policy)
+    // reimburse the leader
+    const winnerCanGetGems = await winner.canGetGems();
+    if (!winnerCanGetGems) {
+      await User.update({_id: challenge.leader}, {$inc: {balance: challenge.prize / 4}}).exec();
+    } else {
+      winner.balance += challenge.prize / 4;
+    }
 
     winner.addNotification('WON_CHALLENGE');
 

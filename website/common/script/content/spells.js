@@ -1,6 +1,10 @@
 import t from './translation';
-import _ from 'lodash';
+import each from 'lodash/each';
 import { NotAuthorized } from '../libs/errors';
+import statsComputed from '../libs/statsComputed';
+import crit from '../fns/crit';
+import updateStats from '../fns/updateStats';
+
 /*
   ---------------------------------------------------------------
   Spells
@@ -13,7 +17,7 @@ import { NotAuthorized } from '../libs/errors';
 
   * {cast}: the function that's run to perform the ability's action. This is pretty slick - because this is exported to the
     web, this function can be performed on the client and on the server. `user` param is self (needed for determining your
-    own stats for effectiveness of cast), and `target` param is one of [task, party, user]. In the case of `self` spells,
+    own stats for effectiveness of cast), and `target` param is one of [task, party, user]. In the case of `self` skills,
     you act on `user` instead of `target`. You can trust these are the correct objects, as long as the `target` attr of the
     spell is correct. Take a look at habitrpg/website/server/models/user.js and habitrpg/website/server/models/task.js for what attributes are
     available on each model. Note `task.value` is its "redness". If party is passed in, it's an array of users,
@@ -27,8 +31,8 @@ function diminishingReturns (bonus, max, halfway) {
   return max * (bonus / (bonus + halfway));
 }
 
-function calculateBonus (value, stat, crit = 1, statScale = 0.5) {
-  return (value < 0 ? 1 : value + 1) + stat * statScale * crit;
+function calculateBonus (value, stat, critVal = 1, statScale = 0.5) {
+  return (value < 0 ? 1 : value + 1) + stat * statScale * critVal;
 }
 
 let spells = {};
@@ -41,12 +45,12 @@ spells.wizard = {
     target: 'task',
     notes: t('spellWizardFireballNotes'),
     cast (user, target, req) {
-      let bonus = user._statsComputed.int * user.fns.crit('per');
+      let bonus = statsComputed(user).int * crit.crit(user, 'per');
       bonus *= Math.ceil((target.value < 0 ? 1 : target.value + 1) * 0.075);
       user.stats.exp += diminishingReturns(bonus, 75);
       if (!user.party.quest.progress.up) user.party.quest.progress.up = 0;
-      user.party.quest.progress.up += Math.ceil(user._statsComputed.int * 0.1);
-      user.fns.updateStats(user.stats, req);
+      user.party.quest.progress.up += Math.ceil(statsComputed(user).int * 0.1);
+      updateStats(user, user.stats, req);
     },
   },
   mpheal: { // Ethereal Surge
@@ -56,8 +60,8 @@ spells.wizard = {
     target: 'party',
     notes: t('spellWizardMPHealNotes'),
     cast (user, target) {
-      _.each(target, (member) => {
-        let bonus = user._statsComputed.int;
+      each(target, (member) => {
+        let bonus = statsComputed(user).int;
         if (user._id !== member._id) {
           member.stats.mp += Math.ceil(diminishingReturns(bonus, 25, 125));
         }
@@ -71,8 +75,8 @@ spells.wizard = {
     target: 'party',
     notes: t('spellWizardEarthNotes'),
     cast (user, target) {
-      _.each(target, (member) => {
-        let bonus = user._statsComputed.int - user.stats.buffs.int;
+      each(target, (member) => {
+        let bonus = statsComputed(user).int - user.stats.buffs.int;
         if (!member.stats.buffs.int) member.stats.buffs.int = 0;
         member.stats.buffs.int += Math.ceil(diminishingReturns(bonus, 30, 200));
       });
@@ -98,7 +102,7 @@ spells.warrior = {
     target: 'task',
     notes: t('spellWarriorSmashNotes'),
     cast (user, target) {
-      let bonus = user._statsComputed.str * user.fns.crit('con');
+      let bonus = statsComputed(user).str * crit.crit(user, 'con');
       target.value += diminishingReturns(bonus, 2.5, 35);
       if (!user.party.quest.progress.up) user.party.quest.progress.up = 0;
       user.party.quest.progress.up += diminishingReturns(bonus, 55, 70);
@@ -111,7 +115,7 @@ spells.warrior = {
     target: 'self',
     notes: t('spellWarriorDefensiveStanceNotes'),
     cast (user) {
-      let bonus = user._statsComputed.con - user.stats.buffs.con;
+      let bonus = statsComputed(user).con - user.stats.buffs.con;
       if (!user.stats.buffs.con) user.stats.buffs.con = 0;
       user.stats.buffs.con += Math.ceil(diminishingReturns(bonus, 40, 200));
     },
@@ -123,8 +127,8 @@ spells.warrior = {
     target: 'party',
     notes: t('spellWarriorValorousPresenceNotes'),
     cast (user, target) {
-      _.each(target, (member) => {
-        let bonus = user._statsComputed.str - user.stats.buffs.str;
+      each(target, (member) => {
+        let bonus = statsComputed(user).str - user.stats.buffs.str;
         if (!member.stats.buffs.str) member.stats.buffs.str = 0;
         member.stats.buffs.str += Math.ceil(diminishingReturns(bonus, 20, 200));
       });
@@ -137,8 +141,8 @@ spells.warrior = {
     target: 'party',
     notes: t('spellWarriorIntimidateNotes'),
     cast (user, target) {
-      _.each(target, (member) => {
-        let bonus = user._statsComputed.con - user.stats.buffs.con;
+      each(target, (member) => {
+        let bonus = statsComputed(user).con - user.stats.buffs.con;
         if (!member.stats.buffs.con) member.stats.buffs.con = 0;
         member.stats.buffs.con += Math.ceil(diminishingReturns(bonus, 24, 200));
       });
@@ -154,7 +158,7 @@ spells.rogue = {
     target: 'task',
     notes: t('spellRoguePickPocketNotes'),
     cast (user, target) {
-      let bonus = calculateBonus(target.value, user._statsComputed.per);
+      let bonus = calculateBonus(target.value, statsComputed(user).per);
       user.stats.gp += diminishingReturns(bonus, 25, 75);
     },
   },
@@ -165,11 +169,11 @@ spells.rogue = {
     target: 'task',
     notes: t('spellRogueBackStabNotes'),
     cast (user, target, req) {
-      let _crit = user.fns.crit('str', 0.3);
-      let bonus = calculateBonus(target.value, user._statsComputed.str, _crit);
+      let _crit = crit.crit(user, 'str', 0.3);
+      let bonus = calculateBonus(target.value, statsComputed(user).str, _crit);
       user.stats.exp += diminishingReturns(bonus, 75, 50);
       user.stats.gp += diminishingReturns(bonus, 18, 75);
-      user.fns.updateStats(user.stats, req);
+      updateStats(user, user.stats, req);
     },
   },
   toolsOfTrade: { // Tools of the Trade
@@ -179,8 +183,8 @@ spells.rogue = {
     target: 'party',
     notes: t('spellRogueToolsOfTradeNotes'),
     cast (user, target) {
-      _.each(target, (member) => {
-        let bonus = user._statsComputed.per - user.stats.buffs.per;
+      each(target, (member) => {
+        let bonus = statsComputed(user).per - user.stats.buffs.per;
         if (!member.stats.buffs.per) member.stats.buffs.per = 0;
         member.stats.buffs.per += Math.ceil(diminishingReturns(bonus, 100, 50));
       });
@@ -194,7 +198,7 @@ spells.rogue = {
     notes: t('spellRogueStealthNotes'),
     cast (user) {
       if (!user.stats.buffs.stealth) user.stats.buffs.stealth = 0;
-      user.stats.buffs.stealth += Math.ceil(diminishingReturns(user._statsComputed.per, user.tasksOrder.dailys.length * 0.64, 55));
+      user.stats.buffs.stealth += Math.ceil(diminishingReturns(statsComputed(user).per, user.tasksOrder.dailys.length * 0.64, 55));
     },
   },
 };
@@ -207,7 +211,7 @@ spells.healer = {
     target: 'self',
     notes: t('spellHealerHealNotes'),
     cast (user) {
-      user.stats.hp += (user._statsComputed.con + user._statsComputed.int + 5) * 0.075;
+      user.stats.hp += (statsComputed(user).con + statsComputed(user).int + 5) * 0.075;
       if (user.stats.hp > 50) user.stats.hp = 50;
     },
   },
@@ -218,9 +222,9 @@ spells.healer = {
     target: 'tasks',
     notes: t('spellHealerBrightnessNotes'),
     cast (user, tasks) {
-      _.each(tasks, (task) => {
+      each(tasks, (task) => {
         if (task.type !== 'reward') {
-          task.value += 4 * (user._statsComputed.int / (user._statsComputed.int + 40));
+          task.value += 4 * (statsComputed(user).int / (statsComputed(user).int + 40));
         }
       });
     },
@@ -232,8 +236,8 @@ spells.healer = {
     target: 'party',
     notes: t('spellHealerProtectAuraNotes'),
     cast (user, target) {
-      _.each(target, (member) => {
-        let bonus = user._statsComputed.con - user.stats.buffs.con;
+      each(target, (member) => {
+        let bonus = statsComputed(user).con - user.stats.buffs.con;
         if (!member.stats.buffs.con) member.stats.buffs.con = 0;
         member.stats.buffs.con += Math.ceil(diminishingReturns(bonus, 200, 200));
       });
@@ -246,8 +250,8 @@ spells.healer = {
     target: 'party',
     notes: t('spellHealerHealAllNotes'),
     cast (user, target) {
-      _.each(target, (member) => {
-        member.stats.hp += (user._statsComputed.con + user._statsComputed.int + 5) * 0.04;
+      each(target, (member) => {
+        member.stats.hp += (statsComputed(user).con + statsComputed(user).int + 5) * 0.04;
         if (member.stats.hp > 50) member.stats.hp = 50;
       });
     },
@@ -388,7 +392,7 @@ spells.special = {
         if (!user.achievements.nye) user.achievements.nye = 0;
         user.achievements.nye++;
       } else {
-        _.each([user, target], (u) => {
+        each([user, target], (u) => {
           if (!u.achievements.nye) u.achievements.nye = 0;
           u.achievements.nye++;
         });
@@ -416,7 +420,7 @@ spells.special = {
         if (!user.achievements.valentine) user.achievements.valentine = 0;
         user.achievements.valentine++;
       } else {
-        _.each([user, target], (u) => {
+        each([user, target], (u) => {
           if (!u.achievements.valentine) u.achievements.valentine = 0;
           u.achievements.valentine++;
         });
@@ -443,7 +447,7 @@ spells.special = {
       if (user === target) {
         user.achievements.greeting++;
       } else {
-        _.each([user, target], (u) => {
+        each([user, target], (u) => {
           if (!u.achievements.greeting) u.achievements.greeting = 0;
           u.achievements.greeting++;
         });
@@ -471,7 +475,7 @@ spells.special = {
         if (!user.achievements.thankyou) user.achievements.thankyou = 0;
         user.achievements.thankyou++;
       } else {
-        _.each([user, target], (u) => {
+        each([user, target], (u) => {
           if (!u.achievements.thankyou) u.achievements.thankyou = 0;
           u.achievements.thankyou++;
         });
@@ -499,7 +503,7 @@ spells.special = {
         if (!user.achievements.birthday) user.achievements.birthday = 0;
         user.achievements.birthday++;
       } else {
-        _.each([user, target], (u) => {
+        each([user, target], (u) => {
           if (!u.achievements.birthday) u.achievements.birthday = 0;
           u.achievements.birthday++;
         });
@@ -514,10 +518,94 @@ spells.special = {
       user.stats.gp -= 10;
     },
   },
+  congrats: {
+    text: t('congratsCard'),
+    mana: 0,
+    value: 10,
+    immediateUse: true,
+    silent: true,
+    target: 'user',
+    notes: t('congratsCardNotes'),
+    cast (user, target) {
+      if (user === target) {
+        if (!user.achievements.congrats) user.achievements.congrats = 0;
+        user.achievements.congrats++;
+      } else {
+        each([user, target], (u) => {
+          if (!u.achievements.congrats) u.achievements.congrats = 0;
+          u.achievements.congrats++;
+        });
+      }
+
+      if (!target.items.special.congratsReceived) target.items.special.congratsReceived = [];
+      target.items.special.congratsReceived.push(user.profile.name);
+
+      if (!target.flags) target.flags = {};
+      target.flags.cardReceived = true;
+
+      user.stats.gp -= 10;
+    },
+  },
+  getwell: {
+    text: t('getwellCard'),
+    mana: 0,
+    value: 10,
+    immediateUse: true,
+    silent: true,
+    target: 'user',
+    notes: t('getwellCardNotes'),
+    cast (user, target) {
+      if (user === target) {
+        if (!user.achievements.getwell) user.achievements.getwell = 0;
+        user.achievements.getwell++;
+      } else {
+        each([user, target], (u) => {
+          if (!u.achievements.getwell) u.achievements.getwell = 0;
+          u.achievements.getwell++;
+        });
+      }
+
+      if (!target.items.special.getwellReceived) target.items.special.getwellReceived = [];
+      target.items.special.getwellReceived.push(user.profile.name);
+
+      if (!target.flags) target.flags = {};
+      target.flags.cardReceived = true;
+
+      user.stats.gp -= 10;
+    },
+  },
+  goodluck: {
+    text: t('goodluckCard'),
+    mana: 0,
+    value: 10,
+    immediateUse: true,
+    silent: true,
+    target: 'user',
+    notes: t('goodluckCardNotes'),
+    cast (user, target) {
+      if (user === target) {
+        if (!user.achievements.goodluck) user.achievements.goodluck = 0;
+        user.achievements.goodluck++;
+      } else {
+        each([user, target], (u) => {
+          if (!u.achievements.goodluck) u.achievements.goodluck = 0;
+          u.achievements.goodluck++;
+        });
+      }
+
+      if (!target.items.special.goodluckReceived) target.items.special.goodluckReceived = [];
+      target.items.special.goodluckReceived.push(user.profile.name);
+
+      if (!target.flags) target.flags = {};
+      target.flags.cardReceived = true;
+
+      user.stats.gp -= 10;
+    },
+  },
 };
 
-_.each(spells, (spellClass) => {
-  _.each(spellClass, (spell, key) => {
+each(spells, (spellClass) => {
+  each(spellClass, (spell, key) => {
     spell.key = key;
     let _cast = spell.cast;
     spell.cast = function castSpell (user, target, req) {

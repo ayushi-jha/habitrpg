@@ -9,7 +9,7 @@ let api = {};
  * @apiName GetMarketItems
  * @apiGroup Shops
  *
- * @apiSuccess {Object} data List of push devices
+ * @apiSuccess {Object} data List of available items
  * @apiSuccess {string} message Success message
  */
 api.getMarketItems = {
@@ -19,12 +19,29 @@ api.getMarketItems = {
   async handler (req, res) {
     let user = res.locals.user;
 
+    let resObject = shops.getMarketShop(user, req.language);
+
+    res.respond(200, resObject);
+  },
+};
+
+/**
+ * @apiIgnore
+ * @api {get} /api/v3/shops/market-gear get the available gear for the market
+ * @apiName GetMarketGear
+ * @apiGroup Shops
+ *
+ * @apiSuccess {Object} data List of available gear
+ */
+api.getMarketGear = {
+  method: 'GET',
+  url: '/shops/market-gear',
+  middlewares: [authWithHeaders()],
+  async handler (req, res) {
+    let user = res.locals.user;
+
     let resObject = {
-      identifier: 'market',
-      text: res.t('market'),
-      notes: res.t('welcomeMarketMobile'),
-      imageName: 'npc_alex',
-      categories: shops.getMarketCategories(user, req.language),
+      categories: shops.getMarketGearCategories(user, req.language),
     };
 
     res.respond(200, resObject);
@@ -37,7 +54,7 @@ api.getMarketItems = {
  * @apiName GetQuestShopItems
  * @apiGroup Shops
  *
- * @apiSuccess {Object} data List of push devices
+ * @apiSuccess {Object} data List of available quests
  * @apiSuccess {string} message Success message
  */
 api.getQuestShopItems = {
@@ -47,13 +64,7 @@ api.getQuestShopItems = {
   async handler (req, res) {
     let user = res.locals.user;
 
-    let resObject = {
-      identifier: 'questShop',
-      text: res.t('quests'),
-      notes: res.t('ianTextMobile'),
-      imageName: 'npc_ian',
-      categories: shops.getQuestShopCategories(user, req.language),
-    };
+    let resObject = shops.getQuestShop(user, req.language);
 
     res.respond(200, resObject);
   },
@@ -65,7 +76,7 @@ api.getQuestShopItems = {
  * @apiName GetTimeTravelersShopItems
  * @apiGroup Shops
  *
- * @apiSuccess {Object} data List of push devices
+ * @apiSuccess {Object} data List of available items
  * @apiSuccess {string} message Success message
  */
 api.getTimeTravelerShopItems = {
@@ -74,15 +85,8 @@ api.getTimeTravelerShopItems = {
   middlewares: [authWithHeaders()],
   async handler (req, res) {
     let user = res.locals.user;
-    let hasTrinkets = user.purchased.plan.consecutive.trinkets > 0;
 
-    let resObject = {
-      identifier: 'timeTravelersShop',
-      text: res.t('timeTravelers'),
-      notes: hasTrinkets ? res.t('timeTravelersPopover') : res.t('timeTravelersPopoverNoSubMobile'),
-      imageName: hasTrinkets ? 'npc_timetravelers_active' : 'npc_timetravelers',
-      categories: shops.getTimeTravelersCategories(user, req.language),
-    };
+    let resObject = shops.getTimeTravelersShop(user, req.language);
 
     res.respond(200, resObject);
   },
@@ -94,7 +98,7 @@ api.getTimeTravelerShopItems = {
  * @apiName GetSeasonalShopItems
  * @apiGroup Shops
  *
- * @apiSuccess {Object} data List of push devices
+ * @apiSuccess {Object} data List of available items
  * @apiSuccess {string} message Success message
  */
 api.getSeasonalShopItems = {
@@ -104,12 +108,34 @@ api.getSeasonalShopItems = {
   async handler (req, res) {
     let user = res.locals.user;
 
+    let resObject = shops.getSeasonalShop(user, req.language);
+
+    res.respond(200, resObject);
+  },
+};
+
+/**
+ * @apiIgnore
+ * @api {get} /api/v3/shops/backgrounds get the available items for the backgrounds shop
+ * @apiName GetBackgroundsShopItems
+ * @apiGroup Shops
+ *
+ * @apiSuccess {Object} data List of available backgrounds
+ * @apiSuccess {string} message Success message
+ */
+api.getBackgroundShopItems = {
+  method: 'GET',
+  url: '/shops/backgrounds',
+  middlewares: [authWithHeaders()],
+  async handler (req, res) {
+    let user = res.locals.user;
+
     let resObject = {
-      identifier: 'seasonalShop',
-      text: res.t('seasonalShop'),
-      notes: res.t('seasonalShopFallText'),
-      imageName: 'seasonalshop_open',
-      categories: shops.getSeasonalShopCategories(user, req.language),
+      identifier: 'backgroundShop',
+      text: res.t('backgroundShop'),
+      notes: res.t('backgroundShopText'),
+      imageName: 'background_shop',
+      sets: shops.getBackgroundShopSets(user, req.language),
     };
 
     res.respond(200, resObject);

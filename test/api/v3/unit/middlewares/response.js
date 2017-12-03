@@ -4,6 +4,7 @@ import {
   generateNext,
 } from '../../../../helpers/api-unit.helper';
 import responseMiddleware from '../../../../../website/server/middlewares/response';
+import packageInfo from '../../../../../package.json';
 
 describe('response middleware', () => {
   let res, req, next;
@@ -33,6 +34,8 @@ describe('response middleware', () => {
       success: true,
       data: {field: 1},
       notifications: [],
+      userV: res.locals.user._v,
+      appVersion: packageInfo.version,
     });
   });
 
@@ -49,6 +52,8 @@ describe('response middleware', () => {
       data: {field: 1},
       message: 'hello',
       notifications: [],
+      userV: res.locals.user._v,
+      appVersion: packageInfo.version,
     });
   });
 
@@ -64,12 +69,13 @@ describe('response middleware', () => {
       success: false,
       data: {field: 1},
       notifications: [],
+      userV: res.locals.user._v,
+      appVersion: packageInfo.version,
     });
   });
 
-  it('returns userV if a user is authenticated req.query.userV is passed', () => {
+  it('returns userV if a user is authenticated', () => {
     responseMiddleware(req, res, next);
-    req.query.userV = 3;
     res.respond(200, {field: 1});
 
     expect(res.json).to.be.calledOnce;
@@ -79,6 +85,7 @@ describe('response middleware', () => {
       data: {field: 1},
       notifications: [],
       userV: 0,
+      appVersion: packageInfo.version,
     });
   });
 
@@ -98,10 +105,11 @@ describe('response middleware', () => {
         {
           type: notification.type,
           id: notification.id,
-          createdAt: notification.createdAt,
           data: {},
         },
       ],
+      userV: res.locals.user._v,
+      appVersion: packageInfo.version,
     });
   });
 });

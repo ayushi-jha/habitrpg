@@ -4,7 +4,7 @@ import {
   NotAuthorized,
 } from '../libs/errors';
 import splitWhitespace from '../libs/splitWhitespace';
-import _ from 'lodash';
+import pick from 'lodash/pick';
 
 module.exports = function releaseBoth (user, req = {}, analytics) {
   let animal;
@@ -14,6 +14,8 @@ module.exports = function releaseBoth (user, req = {}, analytics) {
   }
 
   let giveTriadBingo = true;
+  let giveBeastMasterAchievement = true;
+  let giveMountMasterAchievement = true;
 
   if (!user.achievements.triadBingo) {
     if (analytics) {
@@ -29,27 +31,45 @@ module.exports = function releaseBoth (user, req = {}, analytics) {
     user.balance -= 1.5;
   }
 
-  user.items.currentMount = '';
-  user.items.currentPet = '';
+  let mountInfo = content.mountInfo[user.items.currentMount];
+
+  if (mountInfo && mountInfo.type === 'drop') {
+    user.items.currentMount = '';
+  }
+
+  let petInfo = content.petInfo[user.items.currentPet];
+
+  if (petInfo && petInfo.type === 'drop') {
+    user.items.currentPet = '';
+  }
 
   for (animal in content.pets) {
     if (user.items.pets[animal] === -1) {
       giveTriadBingo = false;
+    } else if (!user.items.pets[animal]) {
+      giveBeastMasterAchievement = false;
+    }
+    if (user.items.mounts[animal] === null || user.items.mounts[animal] === undefined) {
+      giveMountMasterAchievement = false;
     }
 
     user.items.pets[animal] = 0;
     user.items.mounts[animal] = null;
   }
 
-  if (!user.achievements.beastMasterCount) {
-    user.achievements.beastMasterCount = 0;
+  if (giveBeastMasterAchievement) {
+    if (!user.achievements.beastMasterCount) {
+      user.achievements.beastMasterCount = 0;
+    }
+    user.achievements.beastMasterCount++;
   }
-  user.achievements.beastMasterCount++;
 
-  if (!user.achievements.mountMasterCount) {
-    user.achievements.mountMasterCount = 0;
+  if (giveMountMasterAchievement) {
+    if (!user.achievements.mountMasterCount) {
+      user.achievements.mountMasterCount = 0;
+    }
+    user.achievements.mountMasterCount++;
   }
-  user.achievements.mountMasterCount++;
 
   if (giveTriadBingo) {
     if (!user.achievements.triadBingoCount) {
@@ -59,7 +79,7 @@ module.exports = function releaseBoth (user, req = {}, analytics) {
   }
 
   return [
-    _.pick(user, splitWhitespace('achievements items balance')),
+    pick(user, splitWhitespace('achievements items balance')),
     i18n.t('mountsAndPetsReleased'),
   ];
 };
